@@ -1,4 +1,4 @@
-import { LayoutDashboard, type LucideIcon } from "lucide-react";
+import { LayoutDashboard, Trophy, type LucideIcon } from "lucide-react";
 
 export type NavItem = {
   href: string;
@@ -13,6 +13,9 @@ export type NavGroup = { label: string; items: NavItem[] };
 export const navigation: NavGroup[] = [
   {
     label: "Overview",
-    items: [{ href: "/dashboard", label: "Dashboard", icon: LayoutDashboard }],
+    items: [
+      { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+      { href: "/dashboard/contests", label: "Contests", icon: Trophy },
+    ],
   },
 ];

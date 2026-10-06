@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 import type { Auth, User } from "firebase/auth";
 import { onAuthStateChanged, signInWithPopup, signOut } from "firebase/auth";
 import { getFirebaseAuth, getGoogleProvider } from "@/lib/firebase/client";
+import { allowedEmailDomain, isAllowedEmail } from "@/lib/email-domain";
 
 type AuthContextValue = { user: User | null; loading: boolean; error: string; signIn: () => Promise<void>; logOut: () => Promise<void> };
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -18,8 +19,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState(firebase.configError);
 
   useEffect(() => {
-    if (!firebase.auth) return;
-    return onAuthStateChanged(firebase.auth, (nextUser) => {
+    const auth = firebase.auth;
+    if (!auth) return;
+    return onAuthStateChanged(auth, (nextUser) => {
+        if (nextUser && !isAllowedEmail(nextUser.email)) {
+          // Not a college account: sign straight back out and say why. (The backend enforces this too.)
+          setError(`Please sign in with your @${allowedEmailDomain} Google account.`);
+          setUser(null);
+          setLoading(false);
+          void signOut(auth);
+          return;
+        }
         setUser(nextUser);
         setLoading(false);
       }, () => {

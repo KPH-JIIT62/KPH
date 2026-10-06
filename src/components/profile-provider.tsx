@@ -4,6 +4,7 @@ import { createContext, useContext, type ReactNode } from "react";
 import { previewProfile } from "@/fixtures/dashboard";
 import { useLocalPreference } from "@/lib/local-preferences";
 import { useAuth } from "@/components/auth-provider";
+import { useAccount } from "@/components/account-provider";
 import type { MemberProfile } from "@/types";
 
 const ProfileContext = createContext<{
@@ -13,6 +14,7 @@ const ProfileContext = createContext<{
 
 export function ProfileProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
+  const { account } = useAccount(); // our database record: its name has the enrollment number removed
   const [stored, setStored] = useLocalPreference("kph-preview-profile");
   let profile = previewProfile;
   try {
@@ -24,11 +26,11 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
       parsed.displayName.length <= 60 &&
       ["sage", "blue", "rose"].includes(parsed.avatarColor)
     )
-      profile = { ...parsed, displayName: user?.displayName || parsed.displayName, email: user?.email || undefined };
+      profile = { ...parsed, displayName: account?.displayName || user?.displayName || parsed.displayName, email: user?.email || undefined };
   } catch {
     /* Invalid local preview data uses the default member. */
   }
-  if (user) profile = { ...profile, displayName: user.displayName || user.email?.split("@")[0] || "Member", email: user.email || undefined };
+  if (user) profile = { ...profile, displayName: account?.displayName || user.displayName || user.email?.split("@")[0] || "Member", email: user.email || undefined };
 
   return (
     <ProfileContext.Provider

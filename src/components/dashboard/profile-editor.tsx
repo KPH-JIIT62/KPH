@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { Check, Save } from "lucide-react";
 import { MemberAvatar, useProfile } from "@/components/profile-provider";
+import { LockedField } from "@/components/ui/locked-field";
 import type { MemberProfile } from "@/types";
 
 function ProfileForm({
@@ -36,27 +37,10 @@ function ProfileForm({
           <p>{profile.email || "Your Google account profile"}</p>
         </div>
       </div>
-      <div className="profile-field">
-        <label htmlFor="display-name">Google account name</label>
-        <input
-          id="display-name"
-          name="displayName"
-          autoComplete="name"
-          maxLength={60}
-          required
-          readOnly
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-          aria-describedby="name-help name-error"
-          aria-invalid={Boolean(error)}
-        />
-        <p id="name-help">
-          Your name comes from your Google account and appears across the hub.
-        </p>
-        <p id="name-error" className="form-error" role="alert">
-          {error}
-        </p>
-      </div>
+      <LockedField id="display-name" label="Name" value={name} hint="Taken from your Google account." />
+      <p id="name-error" className="form-error" role="alert">
+        {error}
+      </p>
       <fieldset className="profile-field">
         <legend>Avatar color</legend>
         <div className="avatar-colors">
@@ -91,20 +75,11 @@ export function ProfileEditor() {
   const [failed, setFailed] = useState(false);
   return (
     <div className="section-page">
-      <section className="page-heading">
-        <div>
-          <span className="eyebrow">A LITTLE ABOUT YOU</span>
-          <h1>
-            My profile<span className="greeting-dot">.</span>
-          </h1>
-          <p>Make yourself at home.</p>
-        </div>
-      </section>
       <div className="profile-panel">
         <ProfileForm
           key={`${profile.displayName}:${profile.avatarColor}`}
           profile={profile}
-            onSave={(next) => {
+          onSave={(next) => {
             const saved = saveProfile(next);
             setFailed(!saved);
             setMessage(
@@ -125,9 +100,6 @@ export function ProfileEditor() {
             </>
           )}
         </div>
-        <p className="sample-note">
-          Your account name and email are provided by Google. Avatar color is saved in this browser.
-        </p>
       </div>
     </div>
   );
