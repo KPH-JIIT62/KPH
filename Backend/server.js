@@ -1,11 +1,17 @@
-const express = require("express");
+// Entry point: load config, connect to the database, start listening.
+const { loadEnv } = require("./src/config/env");
+const { createPool } = require("./src/db/pool");
+const { createFirebaseVerifier } = require("./src/config/firebase");
+const { createApp } = require("./src/app");
 
-const app = express();
+const env = loadEnv();
+const pool = createPool(env.databaseUrl, { ssl: env.databaseSsl, sslCaFile: env.databaseSslCaFile });
+const app = createApp({ env, pool, verifyToken: createFirebaseVerifier(env.firebaseProjectId) });
 
-app.get("/", (req, res) => {
-    res.send("Coding Hub Backend is running");
-});
+const server = app.listen(env.port, () => console.log(`KPH API listening on http://localhost:${env.port}`));
 
-app.listen(5000, () => {
-    console.log("Server running on port 5000");
-});
+function shutdown() {
+  server.close(() => pool.end().finally(() => process.exit(0)));
+}
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);

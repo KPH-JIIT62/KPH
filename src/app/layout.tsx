@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { ThemeProvider } from "@/components/theme-provider";
 import { AuthProvider } from "@/components/auth-provider";
+import { AccountProvider } from "@/components/account-provider";
 import { defaultTheme, themeInitScript, themeStyles } from "@/config/theme";
 import "@fontsource/geist/400.css";
 import "@fontsource/geist/500.css";
@@ -33,7 +34,7 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
       </head>
       <body>
-        <ThemeProvider><AuthProvider>{children}</AuthProvider></ThemeProvider>
+        <ThemeProvider><AuthProvider><AccountProvider>{children}</AccountProvider></AuthProvider></ThemeProvider>
       </body>
     </html>
   );

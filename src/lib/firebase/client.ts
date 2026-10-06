@@ -19,5 +19,8 @@ export function getFirebaseAuth() {
 }
 
 export function getGoogleProvider() {
-  return new GoogleAuthProvider();
+  const provider = new GoogleAuthProvider();
+  // Always show the account chooser, so people with several Google accounts can pick their college one.
+  provider.setCustomParameters({ prompt: "select_account" });
+  return provider;
 }
