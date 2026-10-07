@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -12,6 +11,7 @@ import {
   User,
 } from "lucide-react";
 import { navigation } from "@/config/navigation";
+import { BrandLogo } from "@/components/brand-logo";
 import { useTheme } from "@/components/theme-provider";
 import { useAuth } from "@/components/auth-provider";
 import { useAccount } from "@/components/account-provider";
@@ -97,19 +97,12 @@ function TopNavigation() {
   const { theme, toggleTheme } = useTheme();
   const themeLabel =
     theme === "dark" ? "Switch to light theme" : "Switch to dark theme";
-  const brandLogoSrc =
-    theme === "dark" ? "/images/branding/knuth-logo-dark.png" : "/images/branding/knuth-logo-light.png";
 
   return (
     <header className="topbar">
       <div className="topbar-inner">
         <Link href="/dashboard" className="brand topbar-brand" aria-label="Knuth Programming Hub dashboard">
-          <span className="brand-copy">
-            <strong>
-              knuth<span>.</span>
-            </strong>
-            <span>PROGRAMMING HUB</span>
-          </span>
+          <BrandLogo className="brand-logo-nav" />
         </Link>
 
         <nav className="topbar-nav" aria-label="Main navigation">
@@ -164,10 +157,6 @@ function ShellContent({ children }: { children: ReactNode }) {
         <main id="main-content" tabIndex={-1} className="main-content">
           {children}
         </main>
-
-        <footer className="workspace-footer">
-          <span>Knuth Programming Hub</span>
-        </footer>
       </div>
     </div>
   );

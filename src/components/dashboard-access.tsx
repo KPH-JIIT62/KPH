@@ -4,6 +4,7 @@ import { useEffect, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth-provider";
 import { useAccount } from "@/components/account-provider";
+import { AppLoader } from "@/components/app-loader";
 
 // UX gate only (the real protection is the backend): signed out -> login, profile incomplete -> onboarding.
 export function DashboardAccess({ children }: { children: ReactNode }) {
@@ -18,7 +19,8 @@ export function DashboardAccess({ children }: { children: ReactNode }) {
     if (status === "ready" && account && !account.profileCompleted) router.replace("/onboarding");
   }, [status, account, router]);
 
-  if (loading || !user) return <main className="auth-loading" aria-live="polite">Checking your sign-in…</main>;
+  if (loading || !user)
+    return <AppLoader />;
   if (status === "error")
     return (
       <main className="auth-loading" role="alert">
@@ -32,6 +34,6 @@ export function DashboardAccess({ children }: { children: ReactNode }) {
       </main>
     );
   if (status !== "ready" || !account?.profileCompleted)
-    return <main className="auth-loading" aria-live="polite">Loading your profile…</main>;
+    return <AppLoader />;
   return children;
 }

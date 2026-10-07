@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth-provider";
 import { useAccount } from "@/components/account-provider";
+import { AppLoader } from "@/components/app-loader";
 import { ProfileDetailsForm } from "@/components/onboarding/profile-details-form";
 
 export default function OnboardingPage() {
@@ -32,7 +33,7 @@ export default function OnboardingPage() {
       </main>
     );
   if (loading || !user || status !== "ready" || !account || account.profileCompleted)
-    return <main className="auth-loading" aria-live="polite">Loading…</main>;
+    return <AppLoader />;
 
   return (
     <main className="login-page">
