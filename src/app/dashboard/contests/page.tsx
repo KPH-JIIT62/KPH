@@ -7,6 +7,7 @@ import { ApiError } from "@/lib/api";
 import { useApi } from "@/lib/use-api";
 import { formatContestDate } from "@/lib/contest-format";
 import type { ContestSummary } from "@/types/contest";
+import AITextLoading from "@/components/ui/ai-text-loading";
 
 type State = { status: "loading" | "ready" | "error"; contests: ContestSummary[]; error: string };
 
@@ -43,7 +44,7 @@ export default function ContestsPage() {
         </div>
       </section>
 
-      {state.status === "loading" && <p className="panel-help" aria-live="polite">Loading contests…</p>}
+      {state.status === "loading" && <AITextLoading />}
       {state.status === "error" && (
         <div role="alert">
           <p className="form-error">{state.error}</p>

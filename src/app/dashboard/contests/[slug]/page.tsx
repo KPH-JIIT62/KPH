@@ -11,6 +11,7 @@ import { useApi } from "@/lib/use-api";
 import { formatContestDate } from "@/lib/contest-format";
 import type { Account } from "@/types/account";
 import type { ContestDetail, ContestRegistration } from "@/types/contest";
+import AITextLoading from "@/components/ui/ai-text-loading";
 
 type State = { status: "loading" | "ready" | "notfound" | "error"; detail: ContestDetail | null; error: string };
 
@@ -54,7 +55,7 @@ export default function ContestPage() {
     </Link>
   );
 
-  if (state.status === "loading") return <div className="section-page"><p className="panel-help" aria-live="polite">Loading…</p></div>;
+  if (state.status === "loading") return <div className="section-page"><AITextLoading /></div>;
   if (state.status === "notfound")
     return (
       <div className="section-page">

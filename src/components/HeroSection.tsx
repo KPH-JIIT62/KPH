@@ -2,6 +2,7 @@
 
 import React from "react";
 import Image from "next/image";
+import { BrandLogo } from "@/components/brand-logo";
 import {
   CircleCheck,
   Gauge,
@@ -28,7 +29,7 @@ const HeroSection: React.FC = () => {
             </div>
 
             <h1 className="hero-title">
-              Knuth Programming Hub
+              <BrandLogo className="brand-logo-hero" />
               <span className="hero-title-gradient">
                 Elevating Algorithmic Minds
               </span>
