@@ -137,8 +137,9 @@ The database stores users keyed by Firebase UID and email. The profile is comple
 The current backend logic treats these as the minimum required profile fields:
 
 - enrollment number
-- batch
-- branch
+- batch (typed by the student)
+- branch (**detected by the server** from campus + batch, never typed)
+- Year of Study (**detected by the server** from the enrollment number and today's date, never typed or stored)
 
 The onboarding form and profile validation are deliberately focused on these values. Coding handles like Codeforces, CodeChef, LeetCode, and HackerRank are optional and can be added later.
 
@@ -147,6 +148,16 @@ This is enforced in:
 - `Backend/src/validation/profile.js`
 - `Backend/src/services/userService.js`
 - `Backend/db/migrations/004_handles_optional.sql`
+
+### Academic details (campus, branch, Year of Study)
+
+All rules are data in **one file: `Backend/src/config/academic.js`** (campuses and their enrollment-number formats, batch letter -> branch per campus with optional admission-year ranges, the July 20 academic-year start, programme length). The logic that reads it is `Backend/src/utils/academic.js`. To add a campus, batch or branch, edit the tables in the config file only.
+
+- Campus 62 enrollment numbers: `YY` + 8 digits (e.g. `2501030069`). Campus 128: `99` + `YY` + 8 digits (e.g. `992501030069`).
+- Year of Study = current academic year - admission year + 1. The academic year starts on **July 20** (India time), so it changes by itself; nothing year-related is stored in the database.
+- Branch = the batch letter looked up for the student's campus (and admission year: e.g. `H` = IT on campus 62 only from the 2026 intake).
+- `branch` and `yearOfStudy` sent by a client are ignored; the API returns the derived values in `profile.academic`.
+- Students who think their details are wrong are told to contact `kph.jiit@gmail.com`; there is no in-app correction flow.
 
 ### Important behavior
 
@@ -175,12 +186,13 @@ The backend exposes these authenticated routes:
 - `GET /api/contests/:slug` — fetch contest details and registration state
 - `POST /api/contests/:slug/registrations` — register the current user for a contest
 
-The registration validation accepts only:
+The registration validation stores only:
 
-- `teamName`
 - `hackerrankHandle`
 
-The backend reads the member’s profile details from the database and does not allow the client to submit another person’s enrollment number, batch, or branch.
+The backend reads the member’s profile details (enrollment number, batch, branch and **Year of Study**) from the database and does not allow the client to submit another person’s details. If a request includes a `yearOfStudy` that differs from the profile, it is rejected with `400`; if the profile has no valid Year of Study the API answers `409 YEAR_OF_STUDY_UNAVAILABLE`.
+
+(`contest_registrations.team_name` is no longer used; the column is kept, nullable, so old registrations keep their data. See `006_registration_no_team_name.sql`.)
 
 ---
 
@@ -327,7 +339,6 @@ It trims whitespace, normalizes casing where appropriate, and rejects malformed 
 
 `Backend/src/validation/registration.js` requires:
 
-- `teamName`
 - `hackerrankHandle`
 
 and rejects invalid or empty values early.
@@ -338,7 +349,6 @@ The SQL schema includes constraints for:
 
 - unique Firebase user rows
 - unique contest registration per user per contest
-- valid team name lengths
 - required profile completion conditions
 
 These constraints provide a second layer of protection beyond route validation.

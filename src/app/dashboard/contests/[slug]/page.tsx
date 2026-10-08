@@ -94,8 +94,6 @@ export default function ContestPage() {
             <Check size={13} aria-hidden="true" /> You’re registered
           </span>
           <dl className="summary-list registered-details">
-            <dt>Team name</dt>
-            <dd>{registration.teamName}</dd>
             <dt>Name</dt>
             <dd>{account.displayName}</dd>
             <dt>Enrollment number</dt>
@@ -104,6 +102,8 @@ export default function ContestPage() {
             <dd>
               {account.profile.batch} · {account.profile.branch}
             </dd>
+            <dt>Year of Study</dt>
+            <dd>{account.profile.academic.yearOfStudyLabel ?? "—"}</dd>
             <dt>HackerRank ID</dt>
             <dd>{registration.hackerrankHandle}</dd>
             <dt>Registered on</dt>

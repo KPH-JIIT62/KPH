@@ -1,13 +1,12 @@
 // A controller translates HTTP <-> our code: read the request, call the service, shape the response.
 const { HttpError } = require("../utils/HttpError");
 const { validateProfile } = require("../validation/profile");
-const { toPublicUser } = require("../services/userService");
 
 function createUsersController(userService) {
   return {
     // GET /api/users/me
     getMe(req, res) {
-      res.json({ user: toPublicUser(req.user) });
+      res.json({ user: userService.toPublic(req.user) });
     },
 
     // PUT /api/users/me/profile
@@ -17,9 +16,11 @@ function createUsersController(userService) {
       if (!result.ok) {
         throw new HttpError(400, "VALIDATION_ERROR", "Please fix the highlighted fields.", result.fields);
       }
+      // Branch is derived here on the server from enrollment number + batch; it is never read from the request.
+      const toSave = userService.prepareProfileUpdate(req.user, result.value);
       // req.user.id comes from the verified token (see authenticate.js), never from the body or URL.
-      const row = await userService.updateProfile(req.user.id, result.value);
-      res.json({ user: toPublicUser(row) });
+      const row = await userService.updateProfile(req.user.id, toSave);
+      res.json({ user: userService.toPublic(row) });
     },
   };
 }

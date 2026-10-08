@@ -1,13 +1,15 @@
 // Validation = never trust what arrives in the request body.
 // We read ONLY the fields we expect (a whitelist). Anything else the client sends,
 // such as { role: "ADMIN" }, is simply ignored and can never reach the database.
+//
+// "branch" and "yearOfStudy" are deliberately NOT in the whitelist: they are worked out by the server
+// from the enrollment number + batch (see userService.prepareProfileUpdate), so a client cannot set them.
+// This file only checks the SHAPE of what was typed; the campus / batch / branch rules live in utils/academic.js.
 
 const clean = (text) => text.replace(/\s+/g, " ");
 const RULES = {
   enrollmentNo: { pattern: /^[A-Za-z0-9]{5,20}$/, message: "Enrollment number should be 5–20 letters or digits.", format: (t) => t.toUpperCase() },
-  // Short branch codes (CSE, IT, ECE) are upper-cased so "cse" and "CSE" never become two different branches.
-  branch: { pattern: /^[A-Za-z][A-Za-z0-9 &.()/-]{1,39}$/, message: "Branch should be 2–40 characters, e.g. CSE.", format: (t) => (clean(t).length <= 6 ? clean(t).toUpperCase() : clean(t)) },
-  batch: { pattern: /^[A-Za-z0-9-]{1,10}$/, message: "Batch should be 1–10 characters, e.g. B11.", format: (t) => t.toUpperCase() },
+  batch: { pattern: /^[A-Za-z0-9-]{1,10}$/, message: "Enter your batch letter and number, e.g. B11.", format: (t) => t.toUpperCase() },
   codeforcesHandle: { pattern: /^[A-Za-z0-9_.-]{3,24}$/, message: "Codeforces handle should be 3–24 characters (letters, digits, _ . -)." },
   leetcodeHandle: { pattern: /^[A-Za-z0-9_-]{1,40}$/, message: "LeetCode username should be letters, digits, _ or -." },
   codechefHandle: { pattern: /^[A-Za-z0-9_.-]{1,40}$/, message: "CodeChef username should be letters, digits, _ . or -." },
@@ -18,7 +20,7 @@ const RULES = {
 // so whatever the client sends for it is ignored.
 function validateProfile(body, { enrollmentFixed = false } = {}) {
   const input = body && typeof body === "object" && !Array.isArray(body) ? body : {};
-  const required = enrollmentFixed ? ["batch", "branch"] : ["batch", "branch", "enrollmentNo"];
+  const required = enrollmentFixed ? ["batch"] : ["batch", "enrollmentNo"];
   const value = {};
   const fields = {};
 

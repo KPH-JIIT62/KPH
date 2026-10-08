@@ -17,10 +17,15 @@ if (!/test/i.test(new URL(url).pathname)) throw new Error("TEST_DATABASE_URL mus
 const env = { allowedEmailDomain: "mail.jiit.ac.in", corsOrigins: ["http://localhost:3000"] };
 const google = { sign_in_provider: "google.com" };
 // Fake "Firebase": a token is just a key into this table. Unknown tokens are rejected like forged ones.
+// Enrollment numbers (the part before the @) follow the real rules: Campus 62 = YY + 8 digits, Campus 128 = 99 + YY + 8 digits.
 const TOKENS = {
-  alice: { uid: "uid-alice", email: "9921103001@mail.jiit.ac.in", email_verified: true, name: "Alice A", firebase: google },
-  bob: { uid: "uid-bob", email: "9921103002@mail.jiit.ac.in", email_verified: true, name: "Bob B", firebase: google },
+  alice: { uid: "uid-alice", email: "2501030001@mail.jiit.ac.in", email_verified: true, name: "Alice A", firebase: google }, // campus 62, admitted 2025
+  bob: { uid: "uid-bob", email: "992501030002@mail.jiit.ac.in", email_verified: true, name: "Bob B", firebase: google }, // campus 128, admitted 2025
   shrey: { uid: "uid-shrey", email: "2501030069@mail.jiit.ac.in", email_verified: true, name: "SHREYANSH SRIVASTAVA 2501030069", firebase: google },
+  fresher: { uid: "uid-fresher", email: "2601030010@mail.jiit.ac.in", email_verified: true, name: "Fresh Er", firebase: google }, // campus 62, admitted 2026
+  fresher128: { uid: "uid-fresher128", email: "992601030011@mail.jiit.ac.in", email_verified: true, name: "Fresh Er128", firebase: google }, // campus 128, admitted 2026
+  senior: { uid: "uid-senior", email: "2401030012@mail.jiit.ac.in", email_verified: true, name: "Sen Ior", firebase: google }, // campus 62, admitted 2024
+  legacy: { uid: "uid-legacy", email: "9921103001@mail.jiit.ac.in", email_verified: true, name: "Leg Acy", firebase: google }, // old 10-digit "99…" number: no longer a recognised format
   staff: { uid: "uid-staff", email: "prof.sharma@mail.jiit.ac.in", email_verified: true, name: "Prof Sharma", firebase: google },
   gmail: { uid: "uid-g", email: "someone@gmail.com", email_verified: true, name: "G", firebase: google },
   lookalike: { uid: "uid-l", email: "x@mail.jiit.ac.in.evil.com", email_verified: true, name: "L", firebase: google },
@@ -31,6 +36,10 @@ const verifyToken = async (token) => {
   if (!TOKENS[token]) throw new Error("bad token");
   return TOKENS[token];
 };
+// The app's clock. Fixed (after the July 20, 2026 rollover) so Year of Study is predictable: tests move it to check rollovers.
+const DEFAULT_NOW = "2026-10-08T12:00:00+05:30";
+let nowValue = new Date(DEFAULT_NOW);
+const now = () => nowValue;
 
 let pool, server, base;
 const call = (method, path, { token, body, headers = {} } = {}) =>
@@ -39,19 +48,22 @@ const call = (method, path, { token, body, headers = {} } = {}) =>
     headers: { ...(body ? { "Content-Type": "application/json" } : {}), ...(token ? { Authorization: `Bearer ${token}` } : {}), ...headers },
     body: body === undefined ? undefined : typeof body === "string" ? body : JSON.stringify(body),
   });
-// enrollmentNo is deliberately absent: for alice it comes from her email address.
-const validProfile = { branch: "cse", batch: "b10", codeforcesHandle: "alice_cf", codechefHandle: "alice_cc", leetcodeHandle: "", hackerrankHandle: "  " };
+// enrollmentNo is deliberately absent: for alice it comes from her email address. Branch is absent too: the server works it out.
+const validProfile = { batch: "b10", codeforcesHandle: "alice_cf", codechefHandle: "alice_cc", leetcodeHandle: "", hackerrankHandle: "  " };
 const countUsers = async () => Number((await pool.query("SELECT count(*) FROM users")).rows[0].count);
 const me = async (token) => (await (await call("GET", "/api/users/me", { token })).json()).user;
 
 before(async () => {
   pool = createPool(url);
   await migrate(pool, () => {});
-  server = createApp({ env, pool, verifyToken }).listen(0);
+  server = createApp({ env, pool, verifyToken, now }).listen(0);
   base = `http://localhost:${server.address().port}`;
 });
 after(async () => { server.close(); await pool.end(); });
-beforeEach(() => pool.query("TRUNCATE users CASCADE")); // CASCADE also empties contest_registrations; contests (seeded by a migration) stay
+beforeEach(() => {
+  nowValue = new Date(DEFAULT_NOW);
+  return pool.query("TRUNCATE users CASCADE");
+}); // CASCADE also empties contest_registrations; contests (seeded by a migration) stay
 
 describe("public + plumbing", () => {
   test("health is public", async () => assert.equal((await call("GET", "/api/health")).status, 200));
@@ -143,8 +155,110 @@ describe("display name cleaning", () => {
   });
 });
 
+describe("academic detection (pure rules, config-driven)", () => {
+  const academic = require("../src/utils/academic");
+  const { BATCH_BRANCHES, CAMPUSES, MAX_YEAR_OF_STUDY } = require("../src/config/academic");
+  const at = (iso) => new Date(iso);
+  const NOW = at(DEFAULT_NOW);
+
+  test("campus + admission year come from BOTH enrollment formats (general rule, not just the examples)", () => {
+    assert.deepEqual(academic.parseEnrollment("2601030069"), { ok: true, campus: "62", campusLabel: "Campus 62", admissionYear: 2026 });
+    assert.deepEqual(academic.parseEnrollment("2401030069"), { ok: true, campus: "62", campusLabel: "Campus 62", admissionYear: 2024 });
+    assert.deepEqual(academic.parseEnrollment("992601030069"), { ok: true, campus: "128", campusLabel: "Campus 128", admissionYear: 2026 });
+    assert.deepEqual(academic.parseEnrollment("992301030999"), { ok: true, campus: "128", campusLabel: "Campus 128", admissionYear: 2023 });
+    assert.equal(academic.parseEnrollment("  2501030069 ").admissionYear, 2025); // surrounding spaces are tolerated
+  });
+  test("unrecognised enrollment numbers are rejected with the support address in the message", () => {
+    for (const bad of ["", "abc", "250103006", "25010300691", "99250103006", "9925010300691", "25O1030069", "2501-030069", undefined, null, 2501030069]) {
+      const r = academic.parseEnrollment(bad);
+      assert.equal(r.ok, false, `should reject ${JSON.stringify(bad)}`);
+      assert.match(r.message, /kph\.jiit@gmail\.com/);
+    }
+  });
+  test("an old 10-digit '99…' number is not accepted as campus 128 (campus 128 numbers have 12 digits)", () => {
+    const r = academic.describeAcademic("9921103001", NOW);
+    assert.equal(r.yearOfStudy, null);
+    assert.match(r.error, /couldn’t recognise/);
+  });
+  test("Year of Study for admission 2026 / 2025 / 2024 (both campuses)", () => {
+    for (const [no, year, label] of [["2601030069", 1, "1st Year"], ["2501030069", 2, "2nd Year"], ["2401030069", 3, "3rd Year"], ["992601030069", 1, "1st Year"], ["992501030069", 2, "2nd Year"], ["992401030069", 3, "3rd Year"], ["2301030069", 4, "4th Year"]]) {
+      const r = academic.describeAcademic(no, NOW);
+      assert.equal(r.yearOfStudy, year, no);
+      assert.equal(r.yearOfStudyLabel, label, no);
+    }
+  });
+  test("the academic year rolls over on July 20 (India time), not on January 1", () => {
+    const year = (iso, admitted = 2025) => academic.yearOfStudyFor(admitted, at(iso)).yearOfStudy;
+    assert.equal(year("2026-01-01T00:00:00+05:30"), 1); // new calendar year, still the 2025 academic year
+    assert.equal(year("2026-07-19T23:59:59+05:30"), 1); // last second before the rollover
+    assert.equal(year("2026-07-20T00:00:00+05:30"), 2); // first second after it
+    assert.equal(year("2026-12-31T23:59:59+05:30"), 2);
+    assert.equal(year("2027-07-19T12:00:00+05:30"), 2);
+    assert.equal(year("2027-07-20T12:00:00+05:30"), 3);
+    // a server running in UTC gets the same answer: 18:30 UTC on July 19 is midnight on July 20 in India
+    assert.equal(year("2026-07-19T18:29:59Z"), 1);
+    assert.equal(year("2026-07-19T18:30:00Z"), 2);
+  });
+  test("a first-year before July 20 is not valid yet; beyond the programme length is not recognised", () => {
+    assert.equal(academic.yearOfStudyFor(2026, at("2026-06-01T12:00:00+05:30")).ok, false); // 2026 intake before its academic year starts
+    assert.equal(academic.yearOfStudyFor(2026, at("2026-07-20T00:00:00+05:30")).yearOfStudy, 1);
+    assert.equal(academic.yearOfStudyFor(2026 - MAX_YEAR_OF_STUDY + 1, at("2026-10-08T12:00:00+05:30")).yearOfStudy, MAX_YEAR_OF_STUDY); // admitted 2023 = 4th year
+    assert.equal(academic.yearOfStudyFor(2026 - MAX_YEAR_OF_STUDY, at("2026-10-08T12:00:00+05:30")).ok, false); // admitted 2022 = 5th: outside
+  });
+  test("EVERY batch letter on EVERY campus in the config gives its configured branch (and only for the right campus)", () => {
+    for (const [campus, letters] of Object.entries(BATCH_BRANCHES)) {
+      for (const [letter, rule] of Object.entries(letters)) {
+        const admissionYear = Math.max(2025, rule.fromAdmissionYear ?? 0);
+        const enrollmentNo = campus === "62" ? `${String(admissionYear).slice(2)}01030001` : `99${String(admissionYear).slice(2)}01030001`;
+        for (const batch of [letter, `${letter}1`, `${letter.toLowerCase()}11`]) {
+          const r = academic.deriveAcademic({ enrollmentNo, batch, now: at("2026-10-08T12:00:00+05:30") });
+          assert.equal(r.ok, true, `${campus}/${batch}: ${r.message}`);
+          assert.equal(r.branch, rule.branch, `${campus}/${batch}`);
+          assert.equal(r.campus, campus);
+        }
+      }
+    }
+    // the exact table from the requirements
+    const table = { 62: { B: "CSE", A: "ECE", C: "BT", D: "R&AI", G: "M&C", H: "IT" }, 128: { H: "IT", F: "CSE", E: "ECM" } };
+    for (const [campus, letters] of Object.entries(table)) {
+      const enrollmentNo = campus === "62" ? "2601030001" : "992601030001"; // admitted 2026: every letter exists
+      for (const [letter, branch] of Object.entries(letters)) assert.equal(academic.deriveAcademic({ enrollmentNo, batch: `${letter}9`, now: NOW }).branch, branch, `${campus}/${letter}`);
+    }
+    assert.deepEqual(Object.keys(CAMPUSES).sort(), ["128", "62"]);
+  });
+  test("a batch letter from the OTHER campus is rejected", () => {
+    for (const [enrollmentNo, batch] of [["2501030001", "F1"], ["2501030001", "E1"], ["992501030001", "B1"], ["992501030001", "A1"], ["992501030001", "C1"], ["992501030001", "D1"], ["992501030001", "G1"]]) {
+      const r = academic.deriveAcademic({ enrollmentNo, batch, now: NOW });
+      assert.equal(r.ok, false, `${enrollmentNo}/${batch}`);
+      assert.equal(r.field, "batch");
+    }
+  });
+  test("H means IT on both campuses, but on campus 62 only from the 2026 intake", () => {
+    assert.equal(academic.deriveAcademic({ enrollmentNo: "992501030001", batch: "H1", now: NOW }).branch, "IT"); // 128, admitted 2025
+    assert.equal(academic.deriveAcademic({ enrollmentNo: "992401030001", batch: "H1", now: NOW }).branch, "IT"); // 128 has no start year
+    assert.equal(academic.deriveAcademic({ enrollmentNo: "2601030001", batch: "H1", now: NOW }).branch, "IT"); // 62, admitted 2026
+    for (const enrollmentNo of ["2501030001", "2401030001"]) {
+      const r = academic.deriveAcademic({ enrollmentNo, batch: "H1", now: NOW }); // 62, admitted before 2026
+      assert.equal(r.ok, false, enrollmentNo);
+      assert.match(r.message, /isn’t available for students admitted/);
+    }
+    assert.deepEqual(academic.describeAcademic("2501030001", NOW).batchBranches, { B: "CSE", A: "ECE", C: "BT", D: "R&AI", G: "M&C" });
+    assert.equal(academic.describeAcademic("2601030001", NOW).batchBranches.H, "IT");
+  });
+  test("batch format: one letter + optional 1-2 digit number; anything else is rejected", () => {
+    assert.equal(academic.parseBatch(" b 11 ").batch, "B11");
+    assert.equal(academic.parseBatch("B").batch, "B");
+    for (const bad of ["", "11", "BB1", "B111", "B-1", "B1X", "💥", undefined, 5]) assert.equal(academic.parseBatch(bad).ok, false, JSON.stringify(bad));
+  });
+  test("a client-supplied Year of Study is compared in any sensible spelling", () => {
+    for (const ok of [2, "2", "2nd", "2nd Year", "second", "Second Year", " SECOND YEAR "]) assert.equal(academic.yearInputMatches(ok, 2), true, JSON.stringify(ok));
+    for (const bad of [3, "3", "third", "1st Year", null, undefined, {}, [], "", "two"]) assert.equal(academic.yearInputMatches(bad, 2), false, JSON.stringify(bad));
+  });
+});
+
 describe("first login and onboarding data", () => {
   const me = async (token) => (await (await call("GET", "/api/users/me", { token })).json()).user;
+  const put = (token, body) => call("PUT", "/api/users/me/profile", { token, body });
 
   test("first login creates a STUDENT, takes the enrollment number from the email, profile incomplete", async () => {
     const res = await call("GET", "/api/users/me", { token: "alice" });
@@ -152,11 +266,25 @@ describe("first login and onboarding data", () => {
     const { user } = await res.json();
     assert.equal(user.role, "STUDENT");
     assert.equal(user.displayName, "Alice A"); // name comes from the Google account
-    assert.equal(user.profile.enrollmentNo, "9921103001");
+    assert.equal(user.profile.enrollmentNo, "2501030001");
     assert.equal(user.profile.branch, null);
     assert.equal(user.profileCompleted, false);
     assert.equal(user.firebase_uid, undefined); // internal fields never leave the server
     assert.equal(await countUsers(), 1);
+  });
+  test("the API tells the form the campus, Year of Study and which batch letters this person may use", async () => {
+    const { academic } = (await me("alice")).profile;
+    assert.equal(academic.campus, "62");
+    assert.equal(academic.campusLabel, "Campus 62");
+    assert.equal(academic.admissionYear, 2025);
+    assert.equal(academic.yearOfStudy, 2);
+    assert.equal(academic.yearOfStudyLabel, "2nd Year");
+    assert.equal(academic.error, null);
+    assert.equal(academic.batchBranches.B, "CSE");
+    assert.equal(academic.batchBranches.H, undefined); // campus 62 IT only from the 2026 intake
+    const bob = (await me("bob")).profile.academic;
+    assert.equal(bob.campus, "128");
+    assert.deepEqual(bob.batchBranches, { H: "IT", F: "CSE", E: "ECM" });
   });
   test("the stored name is the cleaned Google name (no enrollment number, not shouting)", async () => {
     const user = await me("shrey");
@@ -165,7 +293,7 @@ describe("first login and onboarding data", () => {
   });
   test("the stored name follows later changes of the Google name", async () => {
     assert.equal((await me("alice")).displayName, "Alice A");
-    TOKENS.alice.name = "ALICE RENAMED 9921103001";
+    TOKENS.alice.name = "ALICE RENAMED 2501030001";
     try {
       assert.equal((await me("alice")).displayName, "Alice Renamed");
       assert.equal((await pool.query("SELECT display_name FROM users")).rows[0].display_name, "Alice Renamed");
@@ -173,8 +301,11 @@ describe("first login and onboarding data", () => {
       TOKENS.alice.name = "Alice A";
     }
   });
-  test("a staff-style address has no enrollment number yet", async () => {
-    assert.equal((await me("staff")).profile.enrollmentNo, null);
+  test("a staff-style address has no enrollment number yet, so nothing can be detected", async () => {
+    const user = await me("staff");
+    assert.equal(user.profile.enrollmentNo, null);
+    assert.equal(user.profile.academic.campus, null);
+    assert.equal(user.profile.academic.yearOfStudy, null);
   });
   test("5 simultaneous first requests still create exactly one user", async () => {
     const results = await Promise.all(Array.from({ length: 5 }, () => call("GET", "/api/users/me", { token: "alice" })));
@@ -182,101 +313,246 @@ describe("first login and onboarding data", () => {
     assert.equal(await countUsers(), 1);
   });
   test("invalid profile -> 400 with per-field messages, nothing saved", async () => {
-    const res = await call("PUT", "/api/users/me/profile", { token: "alice", body: { branch: "", codeforcesHandle: "a b" } });
+    const res = await put("alice", { batch: "", codeforcesHandle: "a b" });
     assert.equal(res.status, 400);
     const { error } = await res.json();
     assert.equal(error.code, "VALIDATION_ERROR");
-    assert.ok(error.fields.branch && error.fields.codeforcesHandle);
+    assert.ok(error.fields.batch && error.fields.codeforcesHandle);
     assert.equal((await me("alice")).profileCompleted, false);
   });
   test("batch is required", async () => {
-    const res = await call("PUT", "/api/users/me/profile", { token: "alice", body: { branch: "CSE", codechefHandle: "alice_cc" } });
+    const res = await put("alice", { codechefHandle: "alice_cc" });
     assert.equal(res.status, 400);
     assert.ok((await res.json()).error.fields.batch);
   });
-  test("handles are optional: batch + branch alone complete the profile", async () => {
-    const res = await call("PUT", "/api/users/me/profile", { token: "alice", body: { batch: "B10", branch: "CSE" } });
+  test("onboarding needs only a batch: branch and Year of Study are detected and saved", async () => {
+    const res = await put("alice", { batch: "b10" });
+    assert.equal(res.status, 200);
+    const { user } = await res.json();
+    assert.equal(user.profileCompleted, true);
+    assert.equal(user.profile.batch, "B10");
+    assert.equal(user.profile.branch, "CSE"); // campus 62 + B
+    assert.equal(user.profile.academic.yearOfStudyLabel, "2nd Year");
+    assert.equal(user.profile.codeforcesHandle, null);
+  });
+  test("branch follows campus + batch: campus 128 H = IT, campus 62 (2026 intake) H = IT, F = CSE", async () => {
+    assert.equal((await (await put("bob", { batch: "H1" })).json()).user.profile.branch, "IT");
+    assert.equal((await (await put("fresher", { batch: "h2" })).json()).user.profile.branch, "IT");
+    assert.equal((await (await put("fresher128", { batch: "F3" })).json()).user.profile.branch, "CSE");
+    assert.equal((await (await put("senior", { batch: "D4" })).json()).user.profile.branch, "R&AI");
+  });
+  test("a batch that does not exist, or belongs to the other campus, or is not open to your intake -> 400 on batch", async () => {
+    for (const [token, batch] of [["alice", "Z9"], ["alice", "F1"], ["alice", "E1"], ["bob", "B1"], ["bob", "A1"], ["alice", "H1"], ["senior", "H1"], ["alice", "B111"], ["alice", "BB"], ["alice", "11"]]) {
+      const res = await put(token, { batch });
+      assert.equal(res.status, 400, `${token}/${batch}`);
+      assert.ok((await res.json()).error.fields.batch, `${token}/${batch}`);
+      assert.equal((await me(token)).profileCompleted, false, `${token}/${batch}`);
+    }
+  });
+  test("the batch error message names the valid letters for the campus and the support address", async () => {
+    const { error } = await (await put("bob", { batch: "B1" })).json();
+    assert.match(error.fields.batch, /doesn’t exist on Campus 128/);
+    assert.match(error.fields.batch, /H, F, E/);
+    assert.match(error.fields.batch, /kph\.jiit@gmail\.com/);
+  });
+  test("a client cannot choose the branch: a branch in the request is ignored and the detected one is saved", async () => {
+    const res = await put("alice", { batch: "B10", branch: "ECE" });
+    assert.equal(res.status, 200);
+    assert.equal((await res.json()).user.profile.branch, "CSE");
+    assert.equal((await pool.query("SELECT branch FROM users")).rows[0].branch, "CSE");
+  });
+  test("a branch sent WITHOUT a valid batch cannot complete the profile either", async () => {
+    const res = await put("alice", { branch: "CSE" });
+    assert.equal(res.status, 400);
+    assert.equal((await me("alice")).profileCompleted, false);
+    assert.equal((await pool.query("SELECT branch FROM users")).rows[0].branch, null);
+  });
+  test("a client cannot set Year of Study: it is not stored anywhere and is derived from the enrollment number", async () => {
+    await put("alice", { batch: "B10", yearOfStudy: 4, year: 4, yearOfStudyLabel: "4th Year", admissionYear: 2022, academic: { yearOfStudy: 4 } });
+    const user = await me("alice");
+    assert.equal(user.profile.academic.yearOfStudy, 2);
+    assert.equal(user.profile.academic.admissionYear, 2025);
+    const columns = (await pool.query("SELECT column_name FROM information_schema.columns WHERE table_name = 'users'")).rows.map((r) => r.column_name);
+    assert.ok(!columns.some((c) => /year|campus|admission/i.test(c)), `users has a stored academic-year column: ${columns}`);
+  });
+  test("Year of Study is recomputed from the date on every request (nothing stale is stored)", async () => {
+    await put("alice", { batch: "B10" }); // admitted 2025
+    const year = async (iso) => {
+      nowValue = new Date(iso);
+      return (await me("alice")).profile.academic.yearOfStudy;
+    };
+    const before = (await pool.query("SELECT updated_at FROM users")).rows[0].updated_at.getTime();
+    assert.equal(await year("2026-07-19T23:59:59+05:30"), 1);
+    assert.equal(await year("2026-07-20T00:00:00+05:30"), 2);
+    assert.equal(await year("2027-07-19T23:59:59+05:30"), 2);
+    assert.equal(await year("2027-07-20T00:00:00+05:30"), 3);
+    assert.equal(await year("2028-07-20T00:00:00+05:30"), 4);
+    assert.equal(await year("2029-07-20T00:00:00+05:30"), null); // past the 4-year programme
+    assert.equal((await pool.query("SELECT updated_at FROM users")).rows[0].updated_at.getTime(), before); // reading never writes
+  });
+  test("an enrollment number we cannot read blocks onboarding with a clear message (from the email, or typed)", async () => {
+    let res = await put("legacy", { batch: "B10" }); // 9921103001 from the email
+    assert.equal(res.status, 400);
+    assert.match((await res.json()).error.fields.enrollmentNo, /kph\.jiit@gmail\.com/);
+    res = await put("staff", { batch: "B10", enrollmentNo: "5500123" });
+    assert.equal(res.status, 400);
+    assert.ok((await res.json()).error.fields.enrollmentNo);
+    assert.equal((await me("staff")).profileCompleted, false);
+  });
+  test("handles are optional: batch alone completes the profile", async () => {
+    const res = await put("alice", { batch: "B10" });
     assert.equal(res.status, 200);
     const { user } = await res.json();
     assert.equal(user.profileCompleted, true);
     assert.equal(user.profile.codeforcesHandle, null);
   });
-  test("handles that are NOT sent stay as they are; handles sent empty are cleared", async () => {
-    await call("PUT", "/api/users/me/profile", { token: "alice", body: { batch: "B10", branch: "CSE", codeforcesHandle: "alice_cf", codechefHandle: "alice_cc" } });
+  test("handles that are NOT sent stay as they are; handles sent empty are cleared; a changed batch re-derives the branch", async () => {
+    await put("alice", { batch: "B10", codeforcesHandle: "alice_cf", codechefHandle: "alice_cc" });
     // a later save that mentions no handles must not wipe them
-    await call("PUT", "/api/users/me/profile", { token: "alice", body: { batch: "B11", branch: "CSE" } });
+    await put("alice", { batch: "B11" });
     let user = await me("alice");
     assert.equal(user.profile.batch, "B11");
+    assert.equal(user.profile.branch, "CSE");
     assert.equal(user.profile.codeforcesHandle, "alice_cf");
     // sending a handle as "" clears just that one
-    await call("PUT", "/api/users/me/profile", { token: "alice", body: { batch: "B11", branch: "CSE", codeforcesHandle: "" } });
+    await put("alice", { batch: "B11", codeforcesHandle: "" });
     user = await me("alice");
     assert.equal(user.profile.codeforcesHandle, null);
     assert.equal(user.profile.codechefHandle, "alice_cc");
   });
+  test("after onboarding, changing the batch re-derives the branch; branch/year in the request still do nothing", async () => {
+    await put("fresher", { batch: "B1" });
+    assert.equal((await me("fresher")).profile.branch, "CSE");
+    const res = await put("fresher", { batch: "A1", branch: "BT", yearOfStudy: 3 });
+    assert.equal(res.status, 200);
+    const { user } = await res.json();
+    assert.equal(user.profile.branch, "ECE"); // from batch A, not from the request
+    assert.equal(user.profile.academic.yearOfStudy, 1);
+    // an invalid batch on a completed profile is refused and nothing changes
+    assert.equal((await put("fresher", { batch: "F1" })).status, 400);
+    assert.equal((await me("fresher")).profile.branch, "ECE");
+  });
+  test("a completed profile cannot have its branch changed by sending the same batch with a different branch", async () => {
+    await put("alice", { batch: "B10" });
+    for (const body of [{ batch: "B10", branch: "ECE" }, { batch: "b10", branch: "" }, { batch: "B10", branch: { $set: "x" } }, { batch: "B10", branch: ["ECE"] }]) {
+      const res = await put("alice", body);
+      assert.equal(res.status, 200);
+      assert.equal((await me("alice")).profile.branch, "CSE");
+    }
+  });
   test("a handle with bad characters is still rejected", async () => {
-    const res = await call("PUT", "/api/users/me/profile", { token: "alice", body: { batch: "B10", branch: "CSE", leetcodeHandle: "no spaces allowed" } });
+    const res = await put("alice", { batch: "B10", leetcodeHandle: "no spaces allowed" });
     assert.equal(res.status, 400);
     assert.ok((await res.json()).error.fields.leetcodeHandle);
   });
   test("valid profile is saved, normalised, and still there on the next login", async () => {
-    const put = await call("PUT", "/api/users/me/profile", { token: "alice", body: validProfile });
-    assert.equal(put.status, 200);
-    assert.equal((await put.json()).user.profileCompleted, true);
+    const saved = await put("alice", validProfile);
+    assert.equal(saved.status, 200);
+    assert.equal((await saved.json()).user.profileCompleted, true);
 
     // "log in again" against a brand-new app instance (as after a server restart)
-    const fresh = createApp({ env, pool, verifyToken }).listen(0);
+    const fresh = createApp({ env, pool, verifyToken, now }).listen(0);
     const again = await fetch(`http://localhost:${fresh.address().port}/api/users/me`, { headers: { Authorization: "Bearer alice" } });
     fresh.close();
     const { user } = await again.json();
     assert.equal(user.profileCompleted, true);
-    assert.deepEqual(user.profile, {
-      enrollmentNo: "9921103001", branch: "CSE", batch: "B10",
+    const { academic, ...stored } = user.profile;
+    assert.deepEqual(stored, {
+      enrollmentNo: "2501030001", branch: "CSE", batch: "B10",
       codeforcesHandle: "alice_cf", leetcodeHandle: null, codechefHandle: "alice_cc", hackerrankHandle: null,
     });
+    assert.equal(academic.yearOfStudyLabel, "2nd Year");
   });
   test("a client cannot override an enrollment number that came from the email", async () => {
-    await call("PUT", "/api/users/me/profile", { token: "alice", body: { ...validProfile, enrollmentNo: "1111111111" } });
-    assert.equal((await me("alice")).profile.enrollmentNo, "9921103001");
+    await put("alice", { ...validProfile, enrollmentNo: "2201030099" });
+    assert.equal((await me("alice")).profile.enrollmentNo, "2501030001");
   });
   test("a user whose email has no number must type it, and it is locked after saving", async () => {
-    const missing = await call("PUT", "/api/users/me/profile", { token: "staff", body: validProfile });
+    const missing = await put("staff", validProfile);
     assert.equal(missing.status, 400);
     assert.ok((await missing.json()).error.fields.enrollmentNo);
-    const saved = await call("PUT", "/api/users/me/profile", { token: "staff", body: { ...validProfile, enrollmentNo: "5500123" } });
+    const saved = await put("staff", { ...validProfile, enrollmentNo: "2401030007" });
     assert.equal(saved.status, 200);
-    await call("PUT", "/api/users/me/profile", { token: "staff", body: { ...validProfile, enrollmentNo: "9999999" } });
-    assert.equal((await me("staff")).profile.enrollmentNo, "5500123");
+    const { user } = await saved.json();
+    assert.equal(user.profile.academic.yearOfStudyLabel, "3rd Year"); // detected from what they typed
+    await put("staff", { ...validProfile, enrollmentNo: "2401039999" });
+    assert.equal((await me("staff")).profile.enrollmentNo, "2401030007");
   });
   test("mass assignment: sending role/id/email is ignored", async () => {
-    await call("PUT", "/api/users/me/profile", { token: "alice", body: { ...validProfile, role: "ADMIN", id: "x", email: "evil@x.com", profileCompleted: true } });
+    await put("alice", { ...validProfile, role: "ADMIN", id: "x", email: "evil@x.com", profileCompleted: true });
     const user = await me("alice");
     assert.equal(user.role, "STUDENT");
     assert.equal(user.email, TOKENS.alice.email);
   });
   test("typing someone else's enrollment number -> 409", async () => {
-    await call("GET", "/api/users/me", { token: "alice" }); // alice owns 9921103001 via her email
-    const res = await call("PUT", "/api/users/me/profile", { token: "staff", body: { ...validProfile, enrollmentNo: "9921103001" } });
+    await call("GET", "/api/users/me", { token: "alice" }); // alice owns 2501030001 via her email
+    const res = await put("staff", { ...validProfile, enrollmentNo: "2501030001" });
     assert.equal(res.status, 409);
     assert.ok((await res.json()).error.fields.enrollmentNo);
   });
   test("the database itself rejects a 'completed' profile with missing data", async () => {
-    await call("GET", "/api/users/me", { token: "alice" }); // enrollment set, branch + handles missing
+    await call("GET", "/api/users/me", { token: "alice" }); // enrollment set, batch + branch missing
     await assert.rejects(pool.query("UPDATE users SET profile_completed_at = now()"), /completed_profile_has_required_fields/);
+  });
+});
+
+describe("existing users keep working (backward compatibility)", () => {
+  const me = async (token) => (await (await call("GET", "/api/users/me", { token })).json()).user;
+  const put = (token, body) => call("PUT", "/api/users/me/profile", { token, body });
+  // Simulates a row saved by the OLD app: free-text branch, completed profile.
+  const completeLikeBefore = async (token, { batch, branch }) => {
+    await call("GET", "/api/users/me", { token });
+    await pool.query("UPDATE users SET batch = $2, branch = $3, profile_completed_at = now() WHERE firebase_uid = $1", [TOKENS[token].uid, batch, branch]);
+  };
+
+  test("a user finished under the old rules stays completed and keeps their stored batch and branch", async () => {
+    await completeLikeBefore("alice", { batch: "B10", branch: "Computer Science" });
+    const user = await me("alice");
+    assert.equal(user.profileCompleted, true);
+    assert.equal(user.profile.branch, "Computer Science"); // NOT overwritten by detection
+    assert.equal(user.profile.academic.yearOfStudy, 2); // but Year of Study is available for them too
+  });
+  test("saving only a coding handle does not touch their stored branch, even though the form sends the same batch", async () => {
+    await completeLikeBefore("alice", { batch: "B10", branch: "Computer Science" });
+    const res = await put("alice", { batch: "B10", codeforcesHandle: "alice_cf" });
+    assert.equal(res.status, 200);
+    const { user } = await res.json();
+    assert.equal(user.profile.branch, "Computer Science");
+    assert.equal(user.profile.codeforcesHandle, "alice_cf");
+  });
+  test("an old user whose enrollment format is no longer recognised can still sign in, use the dashboard and save handles", async () => {
+    await completeLikeBefore("legacy", { batch: "B10", branch: "CSE" });
+    const user = await me("legacy");
+    assert.equal(user.profileCompleted, true);
+    assert.equal(user.profile.academic.yearOfStudy, null);
+    assert.match(user.profile.academic.error, /kph\.jiit@gmail\.com/);
+    const res = await put("legacy", { batch: "B10", leetcodeHandle: "legacy_lc" });
+    assert.equal(res.status, 200);
+    assert.equal((await res.json()).user.profile.leetcodeHandle, "legacy_lc");
+  });
+  test("an old user whose batch is not valid under the new rules keeps it until they change it", async () => {
+    await completeLikeBefore("alice", { batch: "X-7", branch: "CSE" });
+    assert.equal((await put("alice", { batch: "X-7", codeforcesHandle: "alice_cf" })).status, 200);
+    assert.equal((await me("alice")).profile.batch, "X-7");
+    assert.equal((await put("alice", { batch: "Q5" })).status, 400); // changing it goes through the new rules
+    assert.equal((await me("alice")).profile.batch, "X-7");
   });
 });
 
 describe("contests and registration", () => {
   const SLUG = "encode-26-2";
-  const finishProfile = (token) => call("PUT", "/api/users/me/profile", { token, body: { batch: "B10", branch: "CSE", ...(token === "staff" ? { enrollmentNo: "5500123" } : {}) } });
-  const register = (token, body = { teamName: "Team Alpha", hackerrankHandle: "alice_hr" }, slug = SLUG) =>
+  // batch per person: alice = campus 62, bob = campus 128, fresher = campus 62 (2026 intake)
+  const BATCHES = { alice: "B10", bob: "F10", fresher: "B1", senior: "A2", staff: "B10" };
+  const finishProfile = (token) =>
+    call("PUT", "/api/users/me/profile", { token, body: { batch: BATCHES[token], ...(token === "staff" ? { enrollmentNo: "2401030007" } : {}) } });
+  const register = (token, body = { hackerrankHandle: "alice_hr" }, slug = SLUG) =>
     call("POST", `/api/contests/${slug}/registrations`, { token, body });
   const registrations = async () => (await pool.query("SELECT * FROM contest_registrations")).rows;
 
   test("everything requires login", async () => {
     assert.equal((await call("GET", "/api/contests")).status, 401);
     assert.equal((await call("GET", `/api/contests/${SLUG}`)).status, 401);
-    assert.equal((await call("POST", `/api/contests/${SLUG}/registrations`, { body: { teamName: "X Y", hackerrankHandle: "z" } })).status, 401);
+    assert.equal((await call("POST", `/api/contests/${SLUG}/registrations`, { body: { hackerrankHandle: "z" } })).status, 401);
   });
   test("the list contains Encode 26.2, open for registration, not yet registered", async () => {
     const { contests } = await (await call("GET", "/api/contests", { token: "alice" })).json();
@@ -298,33 +574,101 @@ describe("contests and registration", () => {
     assert.equal((await res.json()).error.code, "PROFILE_INCOMPLETE");
     assert.equal((await registrations()).length, 0);
   });
-  test("registration needs a team name and a HackerRank ID", async () => {
+  test("registration needs only a HackerRank ID (there is no team name any more)", async () => {
     await finishProfile("alice");
-    const res = await register("alice", { teamName: " ", hackerrankHandle: "" });
+    const res = await register("alice", { hackerrankHandle: "" });
     assert.equal(res.status, 400);
     const { error } = await res.json();
-    assert.ok(error.fields.teamName && error.fields.hackerrankHandle);
-    assert.equal((await register("alice", { teamName: "<script>", hackerrankHandle: "ok_id" })).status, 400);
+    assert.ok(error.fields.hackerrankHandle);
+    assert.equal(error.fields.teamName, undefined);
+    assert.equal((await register("alice", { hackerrankHandle: "<script>" })).status, 400);
+    assert.equal((await register("alice", {})).status, 400);
     assert.equal((await registrations()).length, 0);
   });
   test("a good registration is saved, and the HackerRank ID is ALSO saved to the profile", async () => {
     await finishProfile("alice");
     assert.equal((await me("alice")).profile.hackerrankHandle, null);
-    const res = await register("alice", { teamName: "  Team    Alpha ", hackerrankHandle: "alice_hr" });
+    const res = await register("alice", { hackerrankHandle: "alice_hr" });
     assert.equal(res.status, 201);
     const body = await res.json();
-    assert.equal(body.registration.teamName, "Team Alpha"); // spaces tidied
+    assert.deepEqual(Object.keys(body.registration).sort(), ["createdAt", "hackerrankHandle", "id"]); // no teamName
+    assert.equal(body.registration.hackerrankHandle, "alice_hr");
     assert.equal(body.user.profile.hackerrankHandle, "alice_hr"); // returned so the UI updates without a reload
+    assert.equal(body.user.profile.academic.yearOfStudyLabel, "2nd Year"); // and the profile's Year of Study comes with it
     assert.equal((await me("alice")).profile.hackerrankHandle, "alice_hr"); // really stored in users
     const { contests } = await (await call("GET", "/api/contests", { token: "alice" })).json();
-    assert.equal(contests.find((c) => c.slug === SLUG).registration.teamName, "Team Alpha");
+    const listed = contests.find((c) => c.slug === SLUG).registration;
+    assert.equal(listed.hackerrankHandle, "alice_hr");
+    assert.equal(listed.teamName, undefined);
     const detail = await (await call("GET", `/api/contests/${SLUG}`, { token: "alice" })).json();
     assert.equal(detail.registration.hackerrankHandle, "alice_hr");
+    assert.equal(detail.registration.teamName, undefined);
+  });
+  test("a team name in the request is ignored and never stored", async () => {
+    await finishProfile("alice");
+    const res = await register("alice", { hackerrankHandle: "alice_hr", teamName: "Team Alpha", team_name: "Team Alpha" });
+    assert.equal(res.status, 201);
+    assert.equal((await res.json()).registration.teamName, undefined);
+    assert.equal((await registrations())[0].team_name, null);
+  });
+  test("the Year of Study is NOT stored on the registration: it follows the profile (here: after the July 20 rollover)", async () => {
+    nowValue = new Date("2027-07-19T12:00:00+05:30"); // alice (admitted 2025) is in her 2nd year
+    await finishProfile("alice");
+    await register("alice");
+    const columns = (await pool.query("SELECT column_name FROM information_schema.columns WHERE table_name = 'contest_registrations'")).rows.map((r) => r.column_name);
+    assert.ok(!columns.some((c) => /year/i.test(c)), `registration has a year column: ${columns}`);
+    nowValue = new Date("2027-07-20T12:00:00+05:30");
+    assert.equal((await me("alice")).profile.academic.yearOfStudyLabel, "3rd Year"); // the same registration, one rollover later
+  });
+  test("a client-supplied Year of Study that differs from the profile is refused, and nothing is saved", async () => {
+    await finishProfile("alice"); // 2nd year
+    for (const yearOfStudy of [1, 3, 4, "3", "3rd Year", "third", "1st Year", 99, null, "", {}, [], true]) {
+      const res = await register("alice", { hackerrankHandle: "alice_hr", yearOfStudy });
+      assert.equal(res.status, 400, `yearOfStudy ${JSON.stringify(yearOfStudy)}`);
+      const { error } = await res.json();
+      assert.equal(error.code, "VALIDATION_ERROR");
+      assert.ok(error.fields.yearOfStudy);
+    }
+    assert.equal((await registrations()).length, 0);
+    assert.equal((await me("alice")).profile.hackerrankHandle, null); // the failed attempts did not touch the profile either
+  });
+  test("a client-supplied Year of Study that MATCHES the profile is accepted (and still comes from the profile)", async () => {
+    await finishProfile("alice");
+    assert.equal((await register("alice", { hackerrankHandle: "alice_hr", yearOfStudy: "2nd Year" })).status, 201);
+    await finishProfile("fresher");
+    assert.equal((await register("fresher", { hackerrankHandle: "fresh_hr", yearOfStudy: 1 })).status, 201);
+  });
+  test("everyone is judged by THEIR OWN profile: a first-year cannot register as a second-year and vice versa", async () => {
+    await finishProfile("fresher"); // 1st year
+    await finishProfile("alice"); // 2nd year
+    assert.equal((await register("fresher", { hackerrankHandle: "f_hr", yearOfStudy: 2 })).status, 400);
+    assert.equal((await register("alice", { hackerrankHandle: "a_hr", yearOfStudy: 1 })).status, 400);
+    assert.equal((await register("fresher", { hackerrankHandle: "f_hr", yearOfStudy: 1 })).status, 201);
+    assert.equal((await register("alice", { hackerrankHandle: "a_hr", yearOfStudy: 2 })).status, 201);
+  });
+  test("with no valid Year of Study on the profile the registration is refused, with the support address", async () => {
+    // (a) an old user whose enrollment format is not recognised
+    await call("GET", "/api/users/me", { token: "legacy" });
+    await pool.query("UPDATE users SET batch = 'B10', branch = 'CSE', profile_completed_at = now() WHERE firebase_uid = 'uid-legacy'");
+    let res = await register("legacy", { hackerrankHandle: "leg_hr" });
+    assert.equal(res.status, 409);
+    let { error } = await res.json();
+    assert.equal(error.code, "YEAR_OF_STUDY_UNAVAILABLE");
+    assert.match(error.message, /kph\.jiit@gmail\.com/);
+    // (b) a student who has run past the 4-year programme on the calendar
+    await finishProfile("alice");
+    nowValue = new Date("2029-08-01T12:00:00+05:30");
+    res = await register("alice");
+    assert.equal(res.status, 409);
+    ({ error } = await res.json());
+    assert.equal(error.code, "YEAR_OF_STUDY_UNAVAILABLE");
+    assert.equal((await registrations()).length, 0);
+    assert.equal((await me("alice")).profile.hackerrankHandle, null);
   });
   test("registering twice -> 409, and the failed attempt changes NOTHING (transaction rolled back)", async () => {
     await finishProfile("alice");
-    await register("alice", { teamName: "Team Alpha", hackerrankHandle: "first_id" });
-    const again = await register("alice", { teamName: "Another Team", hackerrankHandle: "second_id" });
+    await register("alice", { hackerrankHandle: "first_id" });
+    const again = await register("alice", { hackerrankHandle: "second_id" });
     assert.equal(again.status, 409);
     assert.equal((await again.json()).error.code, "ALREADY_REGISTERED");
     assert.equal((await registrations()).length, 1);
@@ -341,19 +685,22 @@ describe("contests and registration", () => {
     await finishProfile("alice");
     await finishProfile("bob");
     const bobId = (await pool.query("SELECT id FROM users WHERE firebase_uid = 'uid-bob'")).rows[0].id;
-    const res = await register("alice", { teamName: "Team Alpha", hackerrankHandle: "alice_hr", userId: bobId, user_id: bobId, batch: "Z99", enrollmentNo: "1", contestId: "x" });
+    const res = await register("alice", { hackerrankHandle: "alice_hr", userId: bobId, user_id: bobId, batch: "Z99", branch: "ECE", enrollmentNo: "1", contestId: "x" });
     assert.equal(res.status, 201);
     const rows = await registrations();
     assert.equal(rows.length, 1);
     assert.notEqual(rows[0].user_id, bobId);
-    assert.equal((await me("alice")).profile.batch, "B10");
+    const alice = await me("alice");
+    assert.equal(alice.profile.batch, "B10");
+    assert.equal(alice.profile.branch, "CSE");
   });
-  test("teammates may register with the same team name", async () => {
+  test("students from both campuses register independently", async () => {
     await finishProfile("alice");
     await finishProfile("bob");
-    assert.equal((await register("alice", { teamName: "Team Alpha", hackerrankHandle: "alice_hr" })).status, 201);
-    assert.equal((await register("bob", { teamName: "team alpha", hackerrankHandle: "bob_hr" })).status, 201);
+    assert.equal((await register("alice", { hackerrankHandle: "alice_hr" })).status, 201);
+    assert.equal((await register("bob", { hackerrankHandle: "bob_hr" })).status, 201);
     assert.equal((await registrations()).length, 2);
+    assert.equal((await me("bob")).profile.academic.campus, "128");
   });
   test("closed registration -> 409", async () => {
     await finishProfile("alice");

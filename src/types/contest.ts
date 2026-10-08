@@ -1,7 +1,6 @@
 // Shapes returned by the contests API (Backend/src/services/contestService.js).
 export type ContestRegistration = {
   id: string;
-  teamName: string;
   hackerrankHandle: string;
   createdAt: string;
 };

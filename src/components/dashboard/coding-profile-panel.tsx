@@ -21,6 +21,8 @@ export function ProfileSummary({ account }: { account: Account }) {
     <dl className="summary-list">
       <dt>Enrollment number</dt>
       <dd>{profile.enrollmentNo ?? "—"}</dd>
+      <dt>Campus</dt>
+      <dd>{profile.academic.campusLabel ?? "—"}</dd>
       <dt>Branch</dt>
       <dd>{profile.branch ?? "—"}</dd>
       {profile.batch && (
@@ -29,6 +31,8 @@ export function ProfileSummary({ account }: { account: Account }) {
           <dd>{profile.batch}</dd>
         </>
       )}
+      <dt>Year of Study</dt>
+      <dd>{profile.academic.yearOfStudyLabel ?? "—"}</dd>
       <dt>Role</dt>
       <dd>{ROLE_LABEL[account.role]}</dd>
       <dt>Member since</dt>

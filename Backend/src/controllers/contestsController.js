@@ -1,6 +1,5 @@
 const { HttpError } = require("../utils/HttpError");
 const { validateRegistration } = require("../validation/registration");
-const { toPublicUser } = require("../services/userService");
 
 // Slugs look like "encode-26-2". Anything else cannot exist, so answer 404 without touching the database.
 const SLUG = /^[a-z0-9-]{1,60}$/;
@@ -9,7 +8,7 @@ const slugOf = (req) => {
   return req.params.slug;
 };
 
-function createContestsController(contestService) {
+function createContestsController(contestService, userService) {
   return {
     // GET /api/contests
     async list(req, res) {
@@ -25,7 +24,7 @@ function createContestsController(contestService) {
       const result = validateRegistration(req.body);
       if (!result.ok) throw new HttpError(400, "VALIDATION_ERROR", "Please fix the highlighted fields.", result.fields);
       const { registration, user } = await contestService.register(req.user.id, slug, result.value);
-      res.status(201).json({ registration, user: toPublicUser(user) });
+      res.status(201).json({ registration, user: userService.toPublic(user) });
     },
   };
 }

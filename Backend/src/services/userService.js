@@ -2,9 +2,13 @@
 // Controllers never write SQL and this file never touches req/res, so each can change independently.
 const { HttpError } = require("../utils/HttpError");
 const { enrollmentFromEmail } = require("../utils/enrollment");
+const { describeAcademic, deriveAcademic } = require("../utils/academic");
 
 // The only shape of a user the API ever returns (camelCase, no firebase_uid).
-function toPublicUser(row) {
+// `profile.academic` is DERIVED, never stored: campus, admission year and Year of Study come from the enrollment
+// number and today's date (so Year of Study changes by itself on July 20), and `batchBranches` lists the batch
+// letters this person may pick with the branch each one gives (the form uses it for instant feedback).
+function toPublicUser(row, now = new Date()) {
   return {
     id: row.id,
     email: row.email,
@@ -19,13 +23,15 @@ function toPublicUser(row) {
       leetcodeHandle: row.leetcode_handle,
       codechefHandle: row.codechef_handle,
       hackerrankHandle: row.hackerrank_handle,
+      academic: describeAcademic(row.enrollment_no, now),
     },
     profileCompleted: row.profile_completed_at !== null,
     createdAt: row.created_at,
   };
 }
 
-function createUserService(pool) {
+// `now` is a function returning the current time. Tests pass a fixed one to check the July 20 rollover.
+function createUserService(pool, { now = () => new Date() } = {}) {
   async function findByFirebaseUid(uid) {
     const { rows } = await pool.query("SELECT * FROM users WHERE firebase_uid = $1", [uid]);
     return rows[0] ?? null;
@@ -97,6 +103,31 @@ function createUserService(pool) {
     }
   }
 
+  // Branch is NEVER taken from the client. This turns the validated form values into what may actually be saved:
+  //  - first-time onboarding, or a changed batch: the enrollment number + batch are checked against the campus rules
+  //    (utils/academic.js) and the branch is DERIVED from them; anything unknown or incompatible is a 400.
+  //  - an unchanged batch on an already-completed profile: nothing academic is touched, so existing users keep
+  //    their stored values (even older free-text ones) when they only add a coding handle.
+  function prepareProfileUpdate(user, value) {
+    const next = { ...value };
+    const onboarding = !user.profile_completed_at;
+    const batchChanged = value.batch !== undefined && value.batch !== user.batch;
+    if (onboarding || batchChanged) {
+      const enrollmentNo = user.enrollment_no ?? value.enrollmentNo;
+      const result = deriveAcademic({ enrollmentNo, batch: value.batch, now: now() });
+      if (!result.ok) throw new HttpError(400, "VALIDATION_ERROR", "Please fix the highlighted fields.", { [result.field]: result.message });
+      next.batch = result.batch;
+      next.branch = result.branch;
+    } else {
+      delete next.batch;
+    }
+    return next;
+  }
+
+  // What we know about a person's campus / Year of Study right now (used by contest registration).
+  const academicOf = (row) => describeAcademic(row.enrollment_no, now());
+  const toPublic = (row) => toPublicUser(row, now());
+
   // Used when someone registers for a contest: their HackerRank ID is also saved to their profile.
   async function setHackerrankHandle(userId, handle, db = pool) {
     const { rows } = await db.query(
@@ -106,7 +137,7 @@ function createUserService(pool) {
     return rows[0];
   }
 
-  return { findOrCreateFromFirebase, updateProfile, setHackerrankHandle };
+  return { findOrCreateFromFirebase, prepareProfileUpdate, updateProfile, setHackerrankHandle, academicOf, toPublic };
 }
 
 module.exports = { createUserService, toPublicUser };
