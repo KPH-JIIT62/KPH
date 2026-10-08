@@ -554,13 +554,32 @@ describe("contests and registration", () => {
     assert.equal((await call("GET", `/api/contests/${SLUG}`)).status, 401);
     assert.equal((await call("POST", `/api/contests/${SLUG}/registrations`, { body: { hackerrankHandle: "z" } })).status, 401);
   });
-  test("the list contains Encode 26.2, open for registration, not yet registered", async () => {
+  // "now" for a moment, then back to the normal fixed clock
+  const atTime = async (iso, fn) => {
+    nowValue = new Date(iso);
+    try { return await fn(); } finally { nowValue = new Date(DEFAULT_NOW); }
+  };
+  const listed = async (token, slug = SLUG) => (await (await call("GET", "/api/contests", { token })).json()).contests.find((c) => c.slug === slug);
+
+  test("the list has Encode 26.2 and Execute 26.4 with their schedules and registration states (soonest first)", async () => {
     const { contests } = await (await call("GET", "/api/contests", { token: "alice" })).json();
-    const encode = contests.find((c) => c.slug === SLUG);
+    const slugs = contests.map((c) => c.slug);
+    assert.ok(slugs.indexOf("encode-26-2") < slugs.indexOf("execute-26-4"));
+
+    const encode = contests.find((c) => c.slug === "encode-26-2");
     assert.equal(encode.title, "Encode 26.2");
-    assert.equal(encode.registrationOpen, true);
-    assert.equal(encode.startsAt, null);
-    assert.equal(encode.registration, null);
+    // 14:00 / 16:00 / 14:15 Indian time on 24 Oct 2026 = 08:30 / 10:30 / 08:45 UTC
+    assert.deepEqual([encode.startsAt, encode.endsAt, encode.registrationClosesAt], ["2026-10-24T08:30:00.000Z", "2026-10-24T10:30:00.000Z", "2026-10-24T08:45:00.000Z"]);
+    assert.deepEqual([encode.registrationStatus, encode.registrationOpen, encode.registration], ["OPEN", true, null]);
+
+    const execute = contests.find((c) => c.slug === "execute-26-4");
+    assert.equal(execute.title, "Execute 26.4");
+    assert.deepEqual([execute.startsAt, execute.endsAt, execute.registrationClosesAt], ["2026-10-31T08:30:00.000Z", "2026-10-31T10:30:00.000Z", null]);
+    assert.deepEqual([execute.registrationStatus, execute.registrationOpen, execute.registration], ["SOON", false, null]);
+  });
+  test("the contest page data carries the same schedule and status", async () => {
+    const { contest } = await (await call("GET", "/api/contests/execute-26-4", { token: "alice" })).json();
+    assert.deepEqual([contest.registrationStatus, contest.endsAt], ["SOON", "2026-10-31T10:30:00.000Z"]);
   });
   test("unknown contest -> 404, also for slugs that cannot exist", async () => {
     assert.equal((await call("GET", "/api/contests/nope", { token: "alice" })).status, 404);
@@ -655,15 +674,22 @@ describe("contests and registration", () => {
     let { error } = await res.json();
     assert.equal(error.code, "YEAR_OF_STUDY_UNAVAILABLE");
     assert.match(error.message, /kph\.jiit@gmail\.com/);
-    // (b) a student who has run past the 4-year programme on the calendar
+    // (b) a student who has run past the 4-year programme on the calendar.
+    // By August 2029 the Encode deadline (Oct 2026) is long past, so take the deadline away for this check:
+    // it is about the Year of Study, not about the deadline. It is put back afterwards.
     await finishProfile("alice");
-    nowValue = new Date("2029-08-01T12:00:00+05:30");
-    res = await register("alice");
-    assert.equal(res.status, 409);
-    ({ error } = await res.json());
-    assert.equal(error.code, "YEAR_OF_STUDY_UNAVAILABLE");
-    assert.equal((await registrations()).length, 0);
-    assert.equal((await me("alice")).profile.hackerrankHandle, null);
+    await pool.query("UPDATE contests SET registration_closes_at = NULL WHERE slug = $1", [SLUG]);
+    try {
+      nowValue = new Date("2029-08-01T12:00:00+05:30");
+      res = await register("alice");
+      assert.equal(res.status, 409);
+      ({ error } = await res.json());
+      assert.equal(error.code, "YEAR_OF_STUDY_UNAVAILABLE");
+      assert.equal((await registrations()).length, 0);
+      assert.equal((await me("alice")).profile.hackerrankHandle, null);
+    } finally {
+      await pool.query("UPDATE contests SET registration_closes_at = '2026-10-24 14:15:00+05:30' WHERE slug = $1", [SLUG]);
+    }
   });
   test("registering twice -> 409, and the failed attempt changes NOTHING (transaction rolled back)", async () => {
     await finishProfile("alice");
@@ -704,14 +730,54 @@ describe("contests and registration", () => {
   });
   test("closed registration -> 409", async () => {
     await finishProfile("alice");
-    await pool.query("UPDATE contests SET registration_open = false WHERE slug = $1", [SLUG]);
+    await pool.query("UPDATE contests SET registration_status = 'CLOSED' WHERE slug = $1", [SLUG]);
     try {
       const res = await register("alice");
       assert.equal(res.status, 409);
       assert.equal((await res.json()).error.code, "REGISTRATION_CLOSED");
+      assert.equal((await listed("alice")).registrationStatus, "CLOSED");
     } finally {
-      await pool.query("UPDATE contests SET registration_open = true WHERE slug = $1", [SLUG]);
+      await pool.query("UPDATE contests SET registration_status = 'OPEN' WHERE slug = $1", [SLUG]);
     }
+  });
+  test("Encode 26.2 registration closes by itself at 14:15 on 24 Oct 2026, Indian time, to the second", async () => {
+    await finishProfile("alice");
+    await finishProfile("bob");
+    await atTime("2026-10-24T14:14:59+05:30", async () => {
+      assert.equal((await listed("alice")).registrationStatus, "OPEN");
+      assert.equal((await register("alice")).status, 201);
+    });
+    await atTime("2026-10-24T14:15:00+05:30", async () => {
+      assert.deepEqual([(await listed("bob")).registrationStatus, (await listed("bob")).registrationOpen], ["CLOSED", false]);
+      const late = await register("bob", { hackerrankHandle: "bob_hr" });
+      assert.equal(late.status, 409);
+      assert.equal((await late.json()).error.code, "REGISTRATION_CLOSED");
+    });
+    assert.equal((await registrations()).length, 1); // only the on-time registration exists
+    // after the deadline the person who registered still sees their registration
+    await atTime("2026-10-25T09:00:00+05:30", async () => {
+      const detail = await (await call("GET", `/api/contests/${SLUG}`, { token: "alice" })).json();
+      assert.equal(detail.registration.hackerrankHandle, "alice_hr");
+      assert.equal(detail.contest.registrationStatus, "CLOSED");
+    });
+  });
+  test("a contest whose registration has not opened yet cannot be registered for, until an organizer opens it", async () => {
+    await finishProfile("alice");
+    const early = await register("alice", { hackerrankHandle: "alice_hr" }, "execute-26-4");
+    assert.equal(early.status, 409);
+    assert.equal((await early.json()).error.code, "REGISTRATION_NOT_OPEN");
+    assert.equal((await registrations()).length, 0);
+    await pool.query("UPDATE contests SET registration_status = 'OPEN' WHERE slug = 'execute-26-4'");
+    try {
+      assert.equal((await register("alice", { hackerrankHandle: "alice_hr" }, "execute-26-4")).status, 201);
+    } finally {
+      await pool.query("UPDATE contests SET registration_status = 'SOON' WHERE slug = 'execute-26-4'");
+    }
+  });
+  test("the database refuses impossible schedules and unknown registration statuses", async () => {
+    await assert.rejects(pool.query("UPDATE contests SET ends_at = starts_at - interval '1 hour' WHERE slug = $1", [SLUG]), /contest_ends_after_it_starts/);
+    await assert.rejects(pool.query("UPDATE contests SET registration_closes_at = ends_at + interval '1 hour' WHERE slug = $1", [SLUG]), /registration_closes_before_the_end/);
+    await assert.rejects(pool.query("UPDATE contests SET registration_status = 'MAYBE' WHERE slug = $1", [SLUG]), /violates check constraint/);
   });
   test("deleting a user row (as you do to re-test) also removes their registrations", async () => {
     await finishProfile("alice");

@@ -3417,3 +3417,7 @@ fieldset.profile-field {
   font-weight: 500;
   text-decoration: underline;
 }
+/* Contest schedule + "Registrations Opening Soon" */
+.status-pill.is-soon { background: var(--mark-sand-background); color: var(--mark-sand-text); }
+.contest-card-footer { flex-wrap: wrap; }
+.contest-deadline { color: var(--accent-text); font-weight: 500; }

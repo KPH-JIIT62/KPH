@@ -33,7 +33,7 @@ function createApp({ env, pool, verifyToken, now }) {
 
   const requireLogin = authenticate({ verifyToken, userService, allowedEmailDomain: env.allowedEmailDomain });
   app.use("/api/users", requireLogin, createUsersRouter(createUsersController(userService)));
-  const contestService = createContestService(pool, userService);
+  const contestService = createContestService(pool, userService, { now });
   app.use("/api/contests", requireLogin, createContestsRouter(createContestsController(contestService, userService)));
 
   app.use(notFound);

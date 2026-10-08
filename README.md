@@ -169,14 +169,42 @@ All rules are data in **one file: `Backend/src/config/academic.js`** (campuses a
 
 ## Contest flow
 
-The current product has a single active contest seeded into the database:
+Contests live in the `contests` table and are seeded by migrations:
 
-- slug: `encode-26-2`
-- title: `Encode 26.2`
+| slug | title | when (Indian time) | registration |
+|---|---|---|---|
+| `encode-26-2` | Encode 26.2 | 24 Oct 2026, 14:00 – 16:00 | open until **14:15 on 24 Oct 2026**, then closes by itself |
+| `execute-26-4` | Execute 26.4 | 31 Oct 2026, 14:00 – 16:00 | **Registrations Opening Soon** (not open yet) |
 
-This is defined in:
+They are defined in `Backend/db/migrations/005_contests_registrations.sql` (the table and Encode) and `007_contest_schedule.sql` (the schedule, the registration status and Execute).
 
-- `Backend/db/migrations/005_contests_registrations.sql`
+### Schedule and registration status
+
+Each contest has `starts_at`, `ends_at` and `registration_closes_at` (exact moments; the site always shows them in Indian time, whatever the visitor's device time zone is) and a `registration_status`:
+
+- `SOON` — shown as "Registrations Opening Soon"; nobody can register yet (`409 REGISTRATION_NOT_OPEN`)
+- `OPEN` — people can register, until `registration_closes_at` if one is set
+- `CLOSED` — nobody can register (`409 REGISTRATION_CLOSED`)
+
+When `registration_closes_at` passes, registration counts as `CLOSED` automatically, to the second, on the server; nobody has to change anything. The API returns the worked-out `registrationStatus` (and `registrationOpen`) so the browser only displays it. The dashboard and the Contests page both list every contest from the database, so a new contest appears on both by itself.
+
+Common changes, run in the Supabase SQL editor:
+
+```sql
+-- open registration for Execute 26.4
+UPDATE contests SET registration_status = 'OPEN' WHERE slug = 'execute-26-4';
+
+-- give it a deadline (14:15 IST on 31 Oct 2026)
+UPDATE contests SET registration_closes_at = '2026-10-31 14:15:00+05:30' WHERE slug = 'execute-26-4';
+
+-- close registration right now
+UPDATE contests SET registration_status = 'CLOSED' WHERE slug = 'encode-26-2';
+
+-- remove one person's test registration (by their enrollment number)
+DELETE FROM contest_registrations WHERE user_id = (SELECT id FROM users WHERE enrollment_no = '2501030069');
+```
+
+The old `registration_open` on/off column was replaced by `registration_status` in migration 007 (existing values were carried over).
 
 ### Contest API
 

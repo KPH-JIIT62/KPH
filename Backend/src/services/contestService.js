@@ -5,22 +5,30 @@
 const { HttpError } = require("../utils/HttpError");
 const { yearInputMatches } = require("../utils/academic");
 const { SUPPORT_EMAIL } = require("../config/academic");
+const { registrationStatus } = require("../utils/contestStatus");
 
-const toPublicContest = (row) => ({
-  id: row.id,
-  slug: row.slug,
-  title: row.title,
-  description: row.description,
-  startsAt: row.starts_at,
-  registrationOpen: row.registration_open,
-});
+// `at` is "now". The status is worked out here, on the server, so the browser can never get it wrong.
+const toPublicContest = (row, at) => {
+  const status = registrationStatus(row, at);
+  return {
+    id: row.id,
+    slug: row.slug,
+    title: row.title,
+    description: row.description,
+    startsAt: row.starts_at,
+    endsAt: row.ends_at,
+    registrationClosesAt: row.registration_closes_at,
+    registrationStatus: status, // "SOON" | "OPEN" | "CLOSED"
+    registrationOpen: status === "OPEN",
+  };
+};
 const toPublicRegistration = (row) => ({
   id: row.id,
   hackerrankHandle: row.hackerrank_handle,
   createdAt: row.created_at,
 });
 
-function createContestService(pool, userService) {
+function createContestService(pool, userService, { now = () => new Date() } = {}) {
   async function listForUser(userId) {
     // LEFT JOIN: every contest is returned; the registration columns are NULL when this person has not registered.
     const { rows } = await pool.query(
@@ -31,7 +39,7 @@ function createContestService(pool, userService) {
       [userId],
     );
     return rows.map((row) => ({
-      ...toPublicContest(row),
+      ...toPublicContest(row, now()),
       registration: row.reg_id
         ? toPublicRegistration({ id: row.reg_id, hackerrank_handle: row.hackerrank_handle, created_at: row.reg_created_at })
         : null,
@@ -42,7 +50,7 @@ function createContestService(pool, userService) {
     const { rows } = await pool.query("SELECT * FROM contests WHERE slug = $1", [slug]);
     if (!rows[0]) throw new HttpError(404, "CONTEST_NOT_FOUND", "Contest not found.");
     const reg = await pool.query("SELECT * FROM contest_registrations WHERE contest_id = $1 AND user_id = $2", [rows[0].id, userId]);
-    return { contest: toPublicContest(rows[0]), registration: reg.rows[0] ? toPublicRegistration(reg.rows[0]) : null };
+    return { contest: toPublicContest(rows[0], now()), registration: reg.rows[0] ? toPublicRegistration(reg.rows[0]) : null };
   }
 
   async function register(userId, slug, { hackerrankHandle, claimedYearOfStudy }) {
@@ -51,7 +59,9 @@ function createContestService(pool, userService) {
       await client.query("BEGIN");
       const contest = (await client.query("SELECT * FROM contests WHERE slug = $1", [slug])).rows[0];
       if (!contest) throw new HttpError(404, "CONTEST_NOT_FOUND", "Contest not found.");
-      if (!contest.registration_open) throw new HttpError(409, "REGISTRATION_CLOSED", "Registration for this contest is closed.");
+      const status = registrationStatus(contest, now());
+      if (status === "SOON") throw new HttpError(409, "REGISTRATION_NOT_OPEN", "Registration for this contest has not opened yet.");
+      if (status === "CLOSED") throw new HttpError(409, "REGISTRATION_CLOSED", "Registration for this contest is closed.");
 
       // The saved profile is the source of truth for who is registering and for their Year of Study.
       const me = (await client.query("SELECT * FROM users WHERE id = $1", [userId])).rows[0];
@@ -76,7 +86,7 @@ function createContestService(pool, userService) {
       );
       const user = await userService.setHackerrankHandle(userId, hackerrankHandle, client);
       await client.query("COMMIT");
-      return { contest: toPublicContest(contest), registration: toPublicRegistration(rows[0]), user };
+      return { contest: toPublicContest(contest, now()), registration: toPublicRegistration(rows[0]), user };
     } catch (error) {
       await client.query("ROLLBACK"); // undo everything done since BEGIN
       if (error.code === "23505" && error.constraint === "one_registration_per_user_per_contest") {

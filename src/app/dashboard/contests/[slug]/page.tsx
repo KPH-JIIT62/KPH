@@ -3,12 +3,12 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { ArrowLeft, CalendarClock, Check } from "lucide-react";
+import { ArrowLeft, CalendarClock, Check, Hourglass } from "lucide-react";
 import { useAccount } from "@/components/account-provider";
 import { ContestRegistrationForm, type RegistrationValues } from "@/components/contests/contest-registration-form";
 import { ApiError } from "@/lib/api";
 import { useApi } from "@/lib/use-api";
-import { formatContestDate } from "@/lib/contest-format";
+import { formatContestDate, formatContestWhen, formatRegistrationDeadline } from "@/lib/contest-format";
 import type { Account } from "@/types/account";
 import type { ContestDetail, ContestRegistration } from "@/types/contest";
 import AITextLoading from "@/components/ui/ai-text-loading";
@@ -83,8 +83,13 @@ export default function ContestPage() {
             <span className="greeting-dot">.</span>
           </h1>
           <p className="contest-meta">
-            <CalendarClock size={15} aria-hidden="true" /> {formatContestDate(contest.startsAt)}
+            <CalendarClock size={15} aria-hidden="true" /> {formatContestWhen(contest.startsAt, contest.endsAt)}
           </p>
+          {contest.registrationStatus === "OPEN" && !registration && contest.registrationClosesAt && (
+            <p className="contest-meta contest-deadline">
+              <Hourglass size={15} aria-hidden="true" /> {formatRegistrationDeadline(contest.registrationClosesAt)}
+            </p>
+          )}
         </div>
       </section>
 
@@ -110,7 +115,12 @@ export default function ContestPage() {
             <dd>{formatContestDate(registration.createdAt)}</dd>
           </dl>
         </div>
-      ) : !contest.registrationOpen ? (
+      ) : contest.registrationStatus === "SOON" ? (
+        <div className="profile-panel">
+          <span className="status-pill is-soon">Registrations Opening Soon</span>
+          <p className="panel-help">Registration hasn’t opened yet. Check back soon.</p>
+        </div>
+      ) : contest.registrationStatus === "CLOSED" ? (
         <div className="profile-panel">
           <span className="status-pill is-closed">Registration closed</span>
           <p className="panel-help">Registration for this contest has closed.</p>
