@@ -206,12 +206,6 @@ DELETE FROM contest_registrations WHERE user_id = (SELECT id FROM users WHERE en
 
 The old `registration_open` on/off column was replaced by `registration_status` in migration 007 (existing values were carried over).
 
-### Contest posters
-
-Each contest page shows its poster (3:4 portrait) on the right. There is no code or database setting: put the image in
-`public/images/contests/` and name it after the contest's slug, for example `public/images/contests/encode-26-2.jpg`
-(`.jpg`, `.jpeg`, `.png` and `.webp` all work). A contest with no poster file just shows no poster.
-
 ### Contest API
 
 The backend exposes these authenticated routes:

@@ -6,7 +6,6 @@ import { useCallback, useEffect, useState } from "react";
 import { ArrowLeft, CalendarClock, Check, Hourglass } from "lucide-react";
 import { useAccount } from "@/components/account-provider";
 import { ContestRegistrationForm, type RegistrationValues } from "@/components/contests/contest-registration-form";
-import { ContestPoster } from "@/components/contests/contest-poster";
 import { ApiError } from "@/lib/api";
 import { useApi } from "@/lib/use-api";
 import { formatContestDate, formatContestWhen, formatRegistrationDeadline } from "@/lib/contest-format";
@@ -77,67 +76,60 @@ export default function ContestPage() {
   return (
     <div className="section-page">
       {back}
-      {/* Details on the left, the contest poster on the right (below the title on phones). */}
-      <div className="contest-layout">
-        <section className="page-heading contest-heading">
-          <div>
-            <h1>
-              {contest.title}
-              <span className="greeting-dot">.</span>
-            </h1>
-            <p className="contest-meta">
-              <CalendarClock size={15} aria-hidden="true" /> {formatContestWhen(contest.startsAt, contest.endsAt)}
+      <section className="page-heading">
+        <div>
+          <h1>
+            {contest.title}
+            <span className="greeting-dot">.</span>
+          </h1>
+          <p className="contest-meta">
+            <CalendarClock size={15} aria-hidden="true" /> {formatContestWhen(contest.startsAt, contest.endsAt)}
+          </p>
+          {contest.registrationStatus === "OPEN" && !registration && contest.registrationClosesAt && (
+            <p className="contest-meta contest-deadline">
+              <Hourglass size={15} aria-hidden="true" /> {formatRegistrationDeadline(contest.registrationClosesAt)}
             </p>
-            {contest.registrationStatus === "OPEN" && !registration && contest.registrationClosesAt && (
-              <p className="contest-meta contest-deadline">
-                <Hourglass size={15} aria-hidden="true" /> {formatRegistrationDeadline(contest.registrationClosesAt)}
-              </p>
-            )}
-          </div>
-        </section>
-
-        <ContestPoster slug={contest.slug} title={contest.title} />
-
-        <div className="contest-panel">
-          {registration ? (
-            <div className="profile-panel">
-              <span className="status-pill is-done">
-                <Check size={13} aria-hidden="true" /> You’re registered
-              </span>
-              <dl className="summary-list registered-details">
-                <dt>Name</dt>
-                <dd>{account.displayName}</dd>
-                <dt>Enrollment number</dt>
-                <dd>{account.profile.enrollmentNo}</dd>
-                <dt>Batch · Branch</dt>
-                <dd>
-                  {account.profile.batch} · {account.profile.branch}
-                </dd>
-                <dt>Year of Study</dt>
-                <dd>{account.profile.academic.yearOfStudyLabel ?? "—"}</dd>
-                <dt>HackerRank ID</dt>
-                <dd>{registration.hackerrankHandle}</dd>
-                <dt>Registered on</dt>
-                <dd>{formatContestDate(registration.createdAt)}</dd>
-              </dl>
-            </div>
-          ) : contest.registrationStatus === "SOON" ? (
-            <div className="profile-panel">
-              <span className="status-pill is-soon">Registrations Opening Soon</span>
-              <p className="panel-help">Registration hasn’t opened yet. Check back soon.</p>
-            </div>
-          ) : contest.registrationStatus === "CLOSED" ? (
-            <div className="profile-panel">
-              <span className="status-pill is-closed">Registration closed</span>
-              <p className="panel-help">Registration for this contest has closed.</p>
-            </div>
-          ) : (
-            <div className="profile-panel">
-              <ContestRegistrationForm account={account} onSubmit={register} />
-            </div>
           )}
         </div>
-      </div>
+      </section>
+
+      {registration ? (
+        <div className="profile-panel">
+          <span className="status-pill is-done">
+            <Check size={13} aria-hidden="true" /> You’re registered
+          </span>
+          <dl className="summary-list registered-details">
+            <dt>Name</dt>
+            <dd>{account.displayName}</dd>
+            <dt>Enrollment number</dt>
+            <dd>{account.profile.enrollmentNo}</dd>
+            <dt>Batch · Branch</dt>
+            <dd>
+              {account.profile.batch} · {account.profile.branch}
+            </dd>
+            <dt>Year of Study</dt>
+            <dd>{account.profile.academic.yearOfStudyLabel ?? "—"}</dd>
+            <dt>HackerRank ID</dt>
+            <dd>{registration.hackerrankHandle}</dd>
+            <dt>Registered on</dt>
+            <dd>{formatContestDate(registration.createdAt)}</dd>
+          </dl>
+        </div>
+      ) : contest.registrationStatus === "SOON" ? (
+        <div className="profile-panel">
+          <span className="status-pill is-soon">Registrations Opening Soon</span>
+          <p className="panel-help">Registration hasn’t opened yet. Check back soon.</p>
+        </div>
+      ) : contest.registrationStatus === "CLOSED" ? (
+        <div className="profile-panel">
+          <span className="status-pill is-closed">Registration closed</span>
+          <p className="panel-help">Registration for this contest has closed.</p>
+        </div>
+      ) : (
+        <div className="profile-panel">
+          <ContestRegistrationForm account={account} onSubmit={register} />
+        </div>
+      )}
     </div>
   );
 }
