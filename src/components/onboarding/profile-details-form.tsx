@@ -13,10 +13,10 @@ import type { ProfileDetails, ProfileInput } from "@/types/account";
 // The person types only their BATCH. Campus, branch and Year of Study are detected by the server from the enrollment
 // number (+ batch) and shown read-only: there is no way to edit them here, and the request never contains them.
 const HANDLE_FIELDS: { name: keyof ProfileInput; platform: Platform; label: string; placeholder: string }[] = [
-  { name: "codeforcesHandle", platform: "codeforces", label: "Codeforces handle", placeholder: "your_codeforces_handle" },
-  { name: "leetcodeHandle", platform: "leetcode", label: "LeetCode username", placeholder: "your_leetcode_username" },
-  { name: "codechefHandle", platform: "codechef", label: "CodeChef username", placeholder: "your_codechef_username" },
-  { name: "hackerrankHandle", platform: "hackerrank", label: "HackerRank username", placeholder: "your_hackerrank_username" },
+  { name: "codeforcesHandle", platform: "codeforces", label: "Codeforces handle", placeholder: "Type your Codeforces Handle" },
+  { name: "leetcodeHandle", platform: "leetcode", label: "LeetCode username", placeholder: "Type your LeetCode Username" },
+  { name: "codechefHandle", platform: "codechef", label: "CodeChef username", placeholder: "Type your CodeChef Username" },
+  { name: "hackerrankHandle", platform: "hackerrank", label: "HackerRank username", placeholder: "Type your HackerRank Username" },
 ];
 
 export function ProfileDetailsForm({

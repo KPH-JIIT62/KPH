@@ -66,7 +66,7 @@ export function ContestRegistrationForm({
           id="hackerrankHandle"
           name="hackerrankHandle"
           value={hackerrankHandle}
-          placeholder="your_hackerrank_username"
+          placeholder="Type your HackerRank Username"
           autoComplete="off"
           maxLength={40}
           onChange={(event) => setHackerrankHandle(event.target.value)}
