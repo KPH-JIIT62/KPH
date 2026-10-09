@@ -15,6 +15,7 @@ const toPublicContest = (row, at) => {
     slug: row.slug,
     title: row.title,
     description: row.description,
+    venue: row.venue, // null = not announced
     startsAt: row.starts_at,
     endsAt: row.ends_at,
     registrationClosesAt: row.registration_closes_at,

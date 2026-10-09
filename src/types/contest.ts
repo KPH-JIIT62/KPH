@@ -14,6 +14,7 @@ export type Contest = {
   slug: string;
   title: string;
   description: string;
+  venue: string | null; // null = not announced yet
   startsAt: string | null; // null = date not announced yet
   endsAt: string | null;
   registrationClosesAt: string | null; // null = no deadline set

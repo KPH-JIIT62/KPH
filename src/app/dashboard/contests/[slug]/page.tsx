@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { ArrowLeft, CalendarClock, Check, Hourglass } from "lucide-react";
+import { ArrowLeft, CalendarClock, Check, Hourglass, MapPin } from "lucide-react";
 import { useAccount } from "@/components/account-provider";
 import { ContestRegistrationForm, type RegistrationValues } from "@/components/contests/contest-registration-form";
 import { ApiError } from "@/lib/api";
@@ -85,11 +85,17 @@ export default function ContestPage() {
           <p className="contest-meta">
             <CalendarClock size={15} aria-hidden="true" /> {formatContestWhen(contest.startsAt, contest.endsAt)}
           </p>
+          {contest.venue && (
+            <p className="contest-meta">
+              <MapPin size={15} aria-hidden="true" /> Venue: {contest.venue}
+            </p>
+          )}
           {contest.registrationStatus === "OPEN" && !registration && contest.registrationClosesAt && (
             <p className="contest-meta contest-deadline">
               <Hourglass size={15} aria-hidden="true" /> {formatRegistrationDeadline(contest.registrationClosesAt)}
             </p>
           )}
+          {contest.description && <p className="contest-description">{contest.description}</p>}
         </div>
       </section>
 

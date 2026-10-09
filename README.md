@@ -191,10 +191,10 @@ Contests live in the `contests` table and are seeded by migrations:
 
 | slug | title | when (Indian time) | registration |
 |---|---|---|---|
-| `encode-26-2` | Encode 26.2 | 24 Oct 2026, 14:00 – 16:00 | open until **14:15 on 24 Oct 2026**, then closes by itself |
+| `encode-26-2` | Encode 26.2 | 24 Oct 2026, 14:00 – 16:00 (venue: CL1 & CL2) | open until **14:15 on 24 Oct 2026**, then closes by itself |
 | `execute-26-4` | Execute 26.4 | 31 Oct 2026, 14:00 – 16:00 | **Registrations Opening Soon** (not open yet) |
 
-They are defined in `Backend/db/migrations/005_contests_registrations.sql` (the table and Encode) and `007_contest_schedule.sql` (the schedule, the registration status and Execute).
+They are defined in `Backend/db/migrations/005_contests_registrations.sql` (the table and Encode) and `007_contest_schedule.sql` (the schedule, the registration status and Execute) and `009_contest_venue.sql` (the venue column and the Encode description).
 
 ### Schedule and registration status
 
