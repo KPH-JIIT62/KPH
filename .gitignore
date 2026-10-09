@@ -3,3 +3,6 @@ node_modules/
 .next/
 .env.local
 next-env.d.ts
+
+# Core team list: personal data, never commit it
+Backend/private/

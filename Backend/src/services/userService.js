@@ -3,18 +3,22 @@
 const { HttpError } = require("../utils/HttpError");
 const { enrollmentFromEmail } = require("../utils/enrollment");
 const { describeAcademic, deriveAcademic } = require("../utils/academic");
+const { createCoreTeamService } = require("./coreTeamService");
 
 // The only shape of a user the API ever returns (camelCase, no firebase_uid).
 // `profile.academic` is DERIVED, never stored: campus, admission year and Year of Study come from the enrollment
 // number and today's date (so Year of Study changes by itself on July 20), and `batchBranches` lists the batch
 // letters this person may pick with the branch each one gives (the form uses it for instant feedback).
-function toPublicUser(row, now = new Date()) {
+// `role` is the account role (everyone who signs in with an enrollment number is a STUDENT). `coreTeamRole` is
+// separate and ADDITIONAL: "COORDINATOR" or "VOLUNTEER" if they are on the core team roster, otherwise null.
+function toPublicUser(row, now = new Date(), coreTeamRole = null) {
   return {
     id: row.id,
     email: row.email,
     displayName: row.display_name,
     photoUrl: row.photo_url,
     role: row.role,
+    coreTeamRole,
     profile: {
       enrollmentNo: row.enrollment_no,
       branch: row.branch,
@@ -31,7 +35,7 @@ function toPublicUser(row, now = new Date()) {
 }
 
 // `now` is a function returning the current time. Tests pass a fixed one to check the July 20 rollover.
-function createUserService(pool, { now = () => new Date() } = {}) {
+function createUserService(pool, { now = () => new Date(), coreTeam = createCoreTeamService(pool) } = {}) {
   async function findByFirebaseUid(uid) {
     const { rows } = await pool.query("SELECT * FROM users WHERE firebase_uid = $1", [uid]);
     return rows[0] ?? null;
@@ -126,7 +130,10 @@ function createUserService(pool, { now = () => new Date() } = {}) {
 
   // What we know about a person's campus / Year of Study right now (used by contest registration).
   const academicOf = (row) => describeAcademic(row.enrollment_no, now());
-  const toPublic = (row) => toPublicUser(row, now());
+  // Core team membership is looked up by the enrollment number in the person's VERIFIED login email, never by the
+  // enrollment number stored on the profile: that one can be typed by users whose email has no number, so it proves nothing.
+  const coreTeamRoleOf = (row) => coreTeam.roleFor(enrollmentFromEmail(row.email));
+  const toPublic = async (row) => toPublicUser(row, now(), await coreTeamRoleOf(row));
 
   // Used when someone registers for a contest: their HackerRank ID is also saved to their profile.
   async function setHackerrankHandle(userId, handle, db = pool) {
@@ -137,7 +144,7 @@ function createUserService(pool, { now = () => new Date() } = {}) {
     return rows[0];
   }
 
-  return { findOrCreateFromFirebase, prepareProfileUpdate, updateProfile, setHackerrankHandle, academicOf, toPublic };
+  return { findOrCreateFromFirebase, prepareProfileUpdate, updateProfile, setHackerrankHandle, academicOf, coreTeamRoleOf, toPublic };
 }
 
 module.exports = { createUserService, toPublicUser };

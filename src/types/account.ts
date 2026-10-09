@@ -30,6 +30,8 @@ export type Account = {
   displayName: string;
   photoUrl: string | null;
   role: "STUDENT" | "ORGANIZER" | "ADMIN";
+  // ADDITIONAL to role: set from the core team list on the server (never by the browser), otherwise null.
+  coreTeamRole: "COORDINATOR" | "VOLUNTEER" | null;
   profile: ProfileDetails;
   profileCompleted: boolean;
   createdAt: string;

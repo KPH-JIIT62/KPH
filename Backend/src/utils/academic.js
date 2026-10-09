@@ -137,6 +137,7 @@ function yearInputMatches(input, year) {
 }
 
 module.exports = {
+  enrollmentFormatHelp,
   currentAcademicYear,
   parseEnrollment,
   yearOfStudyFor,

@@ -26,6 +26,7 @@ const TOKENS = {
   fresher128: { uid: "uid-fresher128", email: "992601030011@mail.jiit.ac.in", email_verified: true, name: "Fresh Er128", firebase: google }, // campus 128, admitted 2026
   senior: { uid: "uid-senior", email: "2401030012@mail.jiit.ac.in", email_verified: true, name: "Sen Ior", firebase: google }, // campus 62, admitted 2024
   legacy: { uid: "uid-legacy", email: "9921103001@mail.jiit.ac.in", email_verified: true, name: "Leg Acy", firebase: google }, // old 10-digit "99…" number: no longer a recognised format
+  abc: { uid: "uid-abc", email: "abc.xyz@mail.jiit.ac.in", email_verified: true, name: "Abc Xyz", firebase: google }, // a college address that is not an enrollment number
   staff: { uid: "uid-staff", email: "prof.sharma@mail.jiit.ac.in", email_verified: true, name: "Prof Sharma", firebase: google },
   gmail: { uid: "uid-g", email: "someone@gmail.com", email_verified: true, name: "G", firebase: google },
   lookalike: { uid: "uid-l", email: "x@mail.jiit.ac.in.evil.com", email_verified: true, name: "L", firebase: google },
@@ -62,7 +63,7 @@ before(async () => {
 after(async () => { server.close(); await pool.end(); });
 beforeEach(() => {
   nowValue = new Date(DEFAULT_NOW);
-  return pool.query("TRUNCATE users CASCADE");
+  return pool.query("TRUNCATE users, core_team_members CASCADE");
 }); // CASCADE also empties contest_registrations; contests (seeded by a migration) stay
 
 describe("public + plumbing", () => {
@@ -790,5 +791,186 @@ describe("contests and registration", () => {
     await finishProfile("alice");
     await register("alice");
     await assert.rejects(pool.query("DELETE FROM contests WHERE slug = $1", [SLUG]), /violates foreign key/);
+  });
+});
+
+describe("core team roster: CSV parsing", () => {
+  const { parseCoreTeamCsv } = require("../src/utils/coreTeamCsv");
+  test("reads the real file layout: comments, header, roles in any case, Windows line endings, BOM, trailing commas", () => {
+    const text = "\uFEFF# private list\r\n# second comment\r\nenrollment_no,role\r\n2401030289,COORDINATOR\r\n 2501030069 , volunteer ,\r\n\r\n\"992501030399\",\"Volunteer\"\r\n";
+    const { entries, errors } = parseCoreTeamCsv(text);
+    assert.deepEqual(errors, []);
+    assert.deepEqual(entries, [
+      { enrollmentNo: "2401030289", role: "COORDINATOR" },
+      { enrollmentNo: "2501030069", role: "VOLUNTEER" },
+      { enrollmentNo: "992501030399", role: "VOLUNTEER" },
+    ]);
+  });
+  test("reports EVERY problem with its line number, and still lists the good rows", () => {
+    const { entries, errors } = parseCoreTeamCsv("enrollment_no,role\n2501030117,BOSS\n9.9E+11,VOLUNTEER\n123,VOLUNTEER\n2501030069,VOLUNTEER\n2501030069,COORDINATOR\n2501030018\n2501030016,VOLUNTEER,extra\n");
+    assert.deepEqual(errors.map((e) => e.line), [2, 3, 4, 6, 7, 8]);
+    assert.match(errors[0].message, /not a valid role/);
+    assert.match(errors[1].message, /scientific notation/);
+    assert.match(errors[3].message, /already listed on line 5/);
+    assert.match(errors[4].message, /exactly 2 columns/);
+    assert.deepEqual(entries, [{ enrollmentNo: "2501030069", role: "VOLUNTEER" }]);
+  });
+  test("a missing or wrong header, and an empty file, are errors", () => {
+    assert.equal(parseCoreTeamCsv("2501030069,VOLUNTEER\n").errors[0].line, 1);
+    assert.equal(parseCoreTeamCsv("enrollment,role\n").errors.length, 1);
+    assert.equal(parseCoreTeamCsv("").errors.length, 1);
+    assert.equal(parseCoreTeamCsv("# only comments\n").errors.length, 1);
+  });
+  test("enrollment numbers must follow the campus rules (10 digits for campus 62, 12 starting 99 for campus 128)", () => {
+    const { entries, errors } = parseCoreTeamCsv("enrollment_no,role\n2501030069,VOLUNTEER\n992501030399,VOLUNTEER\n9921103001,VOLUNTEER\n25010300691,VOLUNTEER\nabc,VOLUNTEER\n");
+    assert.equal(entries.length, 2);
+    assert.deepEqual(errors.map((e) => e.line), [4, 5, 6]);
+  });
+});
+
+describe("core team roster: database and import", () => {
+  const { createCoreTeamService } = require("../src/services/coreTeamService");
+  const importer = require("../scripts/import-core-team");
+  const os = require("node:os");
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const roster = async () => Object.fromEntries((await pool.query("SELECT enrollment_no, role FROM core_team_members")).rows.map((r) => [r.enrollment_no, r.role]));
+  const writeCsv = (text) => {
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "kph-")), "core-team.csv");
+    fs.writeFileSync(file, text);
+    return file;
+  };
+  const quiet = () => {};
+
+  test("the database refuses an unknown role or a malformed enrollment number", async () => {
+    await assert.rejects(pool.query("INSERT INTO core_team_members VALUES ('2501030069', 'BOSS')"), /core_team_role_valid/);
+    await assert.rejects(pool.query("INSERT INTO core_team_members VALUES ('abc', 'VOLUNTEER')"), /core_team_enrollment_format/);
+    await assert.rejects(pool.query("INSERT INTO core_team_members VALUES (NULL, 'VOLUNTEER')"));
+  });
+  test("sync adds, changes and removes so the table matches the list exactly, and reports it", async () => {
+    const svc = createCoreTeamService(pool);
+    let r = await svc.sync([{ enrollmentNo: "2401030289", role: "COORDINATOR" }, { enrollmentNo: "2501030069", role: "VOLUNTEER" }]);
+    assert.equal(r.added.length, 2);
+    assert.deepEqual(await roster(), { 2401030289: "COORDINATOR", 2501030069: "VOLUNTEER" });
+    r = await svc.sync([{ enrollmentNo: "2401030289", role: "VOLUNTEER" }, { enrollmentNo: "2501030069", role: "VOLUNTEER" }, { enrollmentNo: "992501030399", role: "VOLUNTEER" }]);
+    assert.deepEqual(r.changed, [{ enrollmentNo: "2401030289", from: "COORDINATOR", to: "VOLUNTEER" }]);
+    assert.deepEqual(r.added, [{ enrollmentNo: "992501030399", role: "VOLUNTEER" }]);
+    assert.equal(r.unchanged, 1);
+    r = await svc.sync([{ enrollmentNo: "2501030069", role: "VOLUNTEER" }]);
+    assert.deepEqual(r.removed.map((x) => x.enrollmentNo).sort(), ["2401030289", "992501030399"]);
+    assert.deepEqual(await roster(), { 2501030069: "VOLUNTEER" });
+  });
+  test("a dry run reports the same changes but writes nothing", async () => {
+    const svc = createCoreTeamService(pool);
+    await svc.sync([{ enrollmentNo: "2501030069", role: "VOLUNTEER" }]);
+    const r = await svc.sync([{ enrollmentNo: "2501030069", role: "COORDINATOR" }, { enrollmentNo: "2401030289", role: "VOLUNTEER" }], { dryRun: true });
+    assert.equal(r.added.length, 1);
+    assert.equal(r.changed.length, 1);
+    assert.deepEqual(await roster(), { 2501030069: "VOLUNTEER" });
+  });
+  test("the import script applies a CSV and is safe to run again", async () => {
+    const file = writeCsv("# private\nenrollment_no,role\n2401030289,COORDINATOR\n2501030069,VOLUNTEER\n992501030399,VOLUNTEER\n");
+    await importer.run(pool, [file], quiet);
+    assert.deepEqual(await roster(), { 2401030289: "COORDINATOR", 2501030069: "VOLUNTEER", 992501030399: "VOLUNTEER" });
+    const again = await importer.run(pool, [file], quiet);
+    assert.deepEqual([again.added.length, again.changed.length, again.removed.length, again.unchanged], [0, 0, 0, 3]);
+  });
+  test("editing the CSV and importing again promotes, adds and removes people", async () => {
+    await importer.run(pool, [writeCsv("enrollment_no,role\n2401030289,COORDINATOR\n2501030069,VOLUNTEER\n2501030117,VOLUNTEER\n")], quiet);
+    await importer.run(pool, [writeCsv("enrollment_no,role\n2401030289,COORDINATOR\n2501030069,COORDINATOR\n992501030399,VOLUNTEER\n")], quiet);
+    assert.deepEqual(await roster(), { 2401030289: "COORDINATOR", 2501030069: "COORDINATOR", 992501030399: "VOLUNTEER" });
+  });
+  test("a CSV with any error imports NOTHING", async () => {
+    await importer.run(pool, [writeCsv("enrollment_no,role\n2501030069,VOLUNTEER\n")], quiet);
+    await assert.rejects(importer.run(pool, [writeCsv("enrollment_no,role\n2401030289,COORDINATOR\n2501030117,BOSS\n")], quiet), /1 problem.*Nothing was imported/s);
+    assert.deepEqual(await roster(), { 2501030069: "VOLUNTEER" });
+  });
+  test("--dry-run writes nothing; an empty list is refused unless --allow-empty", async () => {
+    await importer.run(pool, [writeCsv("enrollment_no,role\n2501030069,VOLUNTEER\n")], quiet);
+    await importer.run(pool, [writeCsv("enrollment_no,role\n2401030289,COORDINATOR\n"), "--dry-run"], quiet);
+    assert.deepEqual(await roster(), { 2501030069: "VOLUNTEER" });
+    const empty = writeCsv("enrollment_no,role\n");
+    await assert.rejects(importer.run(pool, [empty], quiet), /would REMOVE all 1/);
+    assert.deepEqual(await roster(), { 2501030069: "VOLUNTEER" });
+    await importer.run(pool, [empty, "--allow-empty"], quiet);
+    assert.deepEqual(await roster(), {});
+  });
+  test("a missing file or an unknown option is a clear error", async () => {
+    await assert.rejects(importer.run(pool, ["/nope/missing.csv"], quiet), /File not found/);
+    await assert.rejects(importer.run(pool, [writeCsv("enrollment_no,role\n"), "--force"], quiet), /Unknown option --force/);
+  });
+});
+
+describe("core team roles in the API", () => {
+  const me = async (token) => (await (await call("GET", "/api/users/me", { token })).json()).user;
+  const put = (token, body) => call("PUT", "/api/users/me/profile", { token, body });
+  const addToRoster = (enrollmentNo, role) => pool.query("INSERT INTO core_team_members (enrollment_no, role) VALUES ($1, $2)", [enrollmentNo, role]);
+
+  test("someone not on the list is a plain student with no core team role", async () => {
+    const user = await me("alice");
+    assert.equal(user.role, "STUDENT");
+    assert.equal(user.coreTeamRole, null);
+  });
+  test("a listed person is STILL a student, and additionally COORDINATOR or VOLUNTEER (both campuses)", async () => {
+    await addToRoster("2501030001", "COORDINATOR"); // alice, campus 62
+    await addToRoster("992501030002", "VOLUNTEER"); // bob, campus 128
+    const alice = await me("alice");
+    assert.equal(alice.role, "STUDENT");
+    assert.equal(alice.coreTeamRole, "COORDINATOR");
+    const bob = await me("bob");
+    assert.equal(bob.role, "STUDENT");
+    assert.equal(bob.coreTeamRole, "VOLUNTEER");
+    assert.equal((await me("shrey")).coreTeamRole, null); // others unaffected
+  });
+  test("a person listed BEFORE they ever sign in gets the role on their first login", async () => {
+    await addToRoster("2501030001", "VOLUNTEER");
+    assert.equal((await pool.query("SELECT count(*)::int AS n FROM users")).rows[0].n, 0);
+    assert.equal((await me("alice")).coreTeamRole, "VOLUNTEER");
+  });
+  test("roster changes apply on the very next request, with no re-login and no user row rewritten", async () => {
+    await me("alice");
+    const before = (await pool.query("SELECT updated_at FROM users")).rows[0].updated_at.getTime();
+    assert.equal((await me("alice")).coreTeamRole, null);
+    await addToRoster("2501030001", "VOLUNTEER");
+    assert.equal((await me("alice")).coreTeamRole, "VOLUNTEER");
+    await pool.query("UPDATE core_team_members SET role = 'COORDINATOR'");
+    assert.equal((await me("alice")).coreTeamRole, "COORDINATOR");
+    await pool.query("DELETE FROM core_team_members");
+    assert.equal((await me("alice")).coreTeamRole, null);
+    assert.equal((await pool.query("SELECT updated_at FROM users")).rows[0].updated_at.getTime(), before);
+  });
+  test("the role survives onboarding and appears in every response that returns the user", async () => {
+    await addToRoster("2501030001", "COORDINATOR");
+    const saved = await (await put("alice", { batch: "B10", codeforcesHandle: "alice_cf" })).json();
+    assert.equal(saved.user.coreTeamRole, "COORDINATOR");
+    const reg = await (await call("POST", "/api/contests/encode-26-2/registrations", { token: "alice", body: { hackerrankHandle: "alice_hr" } })).json();
+    assert.equal(reg.user.coreTeamRole, "COORDINATOR");
+    assert.equal(reg.user.role, "STUDENT");
+  });
+  test("a client cannot grant itself a role: role / coreTeamRole in a request are ignored", async () => {
+    await call("GET", "/api/users/me", { token: "alice" });
+    await put("alice", { batch: "B10", codeforcesHandle: "alice_cf", role: "ADMIN", coreTeamRole: "COORDINATOR", isCoreTeam: true });
+    const user = await me("alice");
+    assert.equal(user.role, "STUDENT");
+    assert.equal(user.coreTeamRole, null);
+    assert.equal((await pool.query("SELECT count(*)::int AS n FROM core_team_members")).rows[0].n, 0);
+  });
+  test("TYPING a listed enrollment number does not grant the role: only the verified login email counts", async () => {
+    await addToRoster("2401030007", "COORDINATOR");
+    // prof.sharma@ and abc.xyz@ have no number in their email, so they type one at onboarding
+    const saved = await put("staff", { batch: "B10", enrollmentNo: "2401030007", codeforcesHandle: "sneaky" });
+    assert.equal(saved.status, 200);
+    const staff = await me("staff");
+    assert.equal(staff.profile.enrollmentNo, "2401030007"); // their profile says it...
+    assert.equal(staff.coreTeamRole, null); // ...but it proves nothing, so no role
+    assert.equal((await me("abc")).coreTeamRole, null);
+    assert.equal(staff.role, "STUDENT");
+  });
+  test("the roster is never exposed: there is no endpoint that lists it, and /me shows only your own role", async () => {
+    await addToRoster("2501030001", "COORDINATOR");
+    await addToRoster("992501030002", "VOLUNTEER");
+    const body = JSON.stringify(await me("shrey"));
+    assert.ok(!body.includes("2501030001") && !body.includes("992501030002"));
+    for (const route of ["/api/core-team", "/api/users", "/api/roles"]) assert.equal((await call("GET", route, { token: "alice" })).status, 404, route);
   });
 });

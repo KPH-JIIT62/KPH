@@ -149,6 +149,24 @@ This is enforced in:
 - `Backend/src/services/userService.js`
 - `Backend/db/migrations/004_handles_optional.sql`
 
+### Roles and the core team
+
+- **Everyone** who signs in with an enrollment-number email (e.g. `2501030069@mail.jiit.ac.in`) is a **STUDENT** (`role`).
+- People on the **core team list** are *additionally* marked `coreTeamRole`: **COORDINATOR** or **VOLUNTEER**. A coordinator is still a student.
+- The list lives in the `core_team_members` table (migration `008`) and is loaded from a private CSV. The CSV is **not** committed (`Backend/private/` is git-ignored).
+- Membership is matched against the enrollment number in the **verified login email only**. A number a user types at onboarding never counts, so nobody can claim a role by typing someone else's number.
+- Changes apply on the next request. Nobody has to sign in again, and people can be listed before their first login.
+
+**Changing the list.** Edit `Backend/private/core-team.csv` (one `enrollment_no,ROLE` per line, `ROLE` is `COORDINATOR` or `VOLUNTEER`), then:
+
+```bash
+cd Backend
+npm run roles:import -- private/core-team.csv --dry-run   # shows what would change, writes nothing
+npm run roles:import -- private/core-team.csv             # applies it
+```
+
+The CSV is the **full** list: the database is made to match it, so deleting a line removes that person's role. A file with any error imports nothing. For the live site, run the same import with the live `DATABASE_URL` (the same way you run `npm run migrate`).
+
 ### Academic details (campus, branch, Year of Study)
 
 All rules are data in **one file: `Backend/src/config/academic.js`** (campuses and their enrollment-number formats, batch letter -> branch per campus with optional admission-year ranges, the July 20 academic-year start, programme length). The logic that reads it is `Backend/src/utils/academic.js`. To add a campus, batch or branch, edit the tables in the config file only.

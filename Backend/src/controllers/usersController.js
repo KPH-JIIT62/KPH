@@ -5,8 +5,8 @@ const { validateProfile } = require("../validation/profile");
 function createUsersController(userService) {
   return {
     // GET /api/users/me
-    getMe(req, res) {
-      res.json({ user: userService.toPublic(req.user) });
+    async getMe(req, res) {
+      res.json({ user: await userService.toPublic(req.user) });
     },
 
     // PUT /api/users/me/profile
@@ -20,7 +20,7 @@ function createUsersController(userService) {
       const toSave = userService.prepareProfileUpdate(req.user, result.value);
       // req.user.id comes from the verified token (see authenticate.js), never from the body or URL.
       const row = await userService.updateProfile(req.user.id, toSave);
-      res.json({ user: userService.toPublic(row) });
+      res.json({ user: await userService.toPublic(row) });
     },
   };
 }

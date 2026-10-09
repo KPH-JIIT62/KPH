@@ -12,6 +12,7 @@ const PLATFORMS: { platform: Platform; key: keyof ProfileDetails; url: (handle: 
   { platform: "hackerrank", key: "hackerrankHandle", url: (h) => `https://www.hackerrank.com/profile/${encodeURIComponent(h)}` },
 ];
 const ROLE_LABEL = { STUDENT: "Student", ORGANIZER: "Organizer", ADMIN: "Admin" } as const;
+const CORE_TEAM_LABEL = { COORDINATOR: "Coordinator", VOLUNTEER: "Volunteer" } as const;
 
 // Read-only list of what the hub knows about the person (pure display: data in, markup out).
 export function ProfileSummary({ account }: { account: Account }) {
@@ -35,6 +36,12 @@ export function ProfileSummary({ account }: { account: Account }) {
       <dd>{profile.academic.yearOfStudyLabel ?? "—"}</dd>
       <dt>Role</dt>
       <dd>{ROLE_LABEL[account.role]}</dd>
+      {account.coreTeamRole && (
+        <>
+          <dt>Core team</dt>
+          <dd>{CORE_TEAM_LABEL[account.coreTeamRole]}</dd>
+        </>
+      )}
       <dt>Member since</dt>
       <dd>{new Date(account.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</dd>
       <dt>Coding profiles</dt>

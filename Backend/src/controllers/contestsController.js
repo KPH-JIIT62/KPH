@@ -24,7 +24,7 @@ function createContestsController(contestService, userService) {
       const result = validateRegistration(req.body);
       if (!result.ok) throw new HttpError(400, "VALIDATION_ERROR", "Please fix the highlighted fields.", result.fields);
       const { registration, user } = await contestService.register(req.user.id, slug, result.value);
-      res.status(201).json({ registration, user: userService.toPublic(user) });
+      res.status(201).json({ registration, user: await userService.toPublic(user) });
     },
   };
 }
