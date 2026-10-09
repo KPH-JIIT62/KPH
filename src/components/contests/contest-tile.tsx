@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ArrowRight, CalendarClock, Check, Hourglass } from "lucide-react";
+import { ContestHighlights } from "@/components/contests/contest-highlights";
 import { contestBadge, formatContestWhen, formatRegistrationDeadline } from "@/lib/contest-format";
 import type { ContestSummary } from "@/types/contest";
 
@@ -19,6 +20,7 @@ export function ContestCard({ contest }: { contest: ContestSummary }) {
       </span>
       <h2>{contest.title}</h2>
       <p>{contest.description}</p>
+      <ContestHighlights contest={contest} compact />
       {showDeadline(contest) && (
         <span className="contest-meta contest-deadline">
           <Hourglass size={15} aria-hidden="true" /> {formatRegistrationDeadline(contest.registrationClosesAt as string)}

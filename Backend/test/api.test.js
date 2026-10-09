@@ -571,7 +571,9 @@ describe("contests and registration", () => {
     assert.equal(encode.title, "Encode 26.2");
     assert.equal(encode.venue, "CL1 & CL2");
     assert.match(encode.description, /individual competitive programming contest by Knuth Programming Hub/);
-    assert.match(encode.description, /₹6,000/);
+    assert.equal(encode.prizePool, "Prize Pool of ₹6K");
+    assert.equal(encode.goodies, "Exciting Goodies");
+    assert.doesNotMatch(encode.description, /prize/i); // the prize has its own field now
     // 14:00 / 16:00 / 14:15 Indian time on 24 Oct 2026 = 08:30 / 10:30 / 08:45 UTC
     assert.deepEqual([encode.startsAt, encode.endsAt, encode.registrationClosesAt], ["2026-10-24T08:30:00.000Z", "2026-10-24T10:30:00.000Z", "2026-10-24T08:45:00.000Z"]);
     assert.deepEqual([encode.registrationStatus, encode.registrationOpen, encode.registration], ["OPEN", true, null]);

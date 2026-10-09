@@ -15,6 +15,8 @@ export type Contest = {
   title: string;
   description: string;
   venue: string | null; // null = not announced yet
+  prizePool: string | null; // e.g. "Prize Pool of ₹6K"; null = none, so no badge is shown
+  goodies: string | null; // e.g. "Exciting Goodies"; null = none, so no badge is shown
   startsAt: string | null; // null = date not announced yet
   endsAt: string | null;
   registrationClosesAt: string | null; // null = no deadline set

@@ -16,6 +16,8 @@ const toPublicContest = (row, at) => {
     title: row.title,
     description: row.description,
     venue: row.venue, // null = not announced
+    prizePool: row.prize_pool, // e.g. "Prize Pool of ₹6K"; null = none
+    goodies: row.goodies, // e.g. "Exciting Goodies"; null = none
     startsAt: row.starts_at,
     endsAt: row.ends_at,
     registrationClosesAt: row.registration_closes_at,

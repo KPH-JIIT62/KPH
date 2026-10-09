@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { ArrowLeft, CalendarClock, Check, Hourglass, MapPin } from "lucide-react";
 import { useAccount } from "@/components/account-provider";
+import { ContestHighlights } from "@/components/contests/contest-highlights";
 import { ContestRegistrationForm, type RegistrationValues } from "@/components/contests/contest-registration-form";
 import { ApiError } from "@/lib/api";
 import { useApi } from "@/lib/use-api";
@@ -95,6 +96,7 @@ export default function ContestPage() {
               <Hourglass size={15} aria-hidden="true" /> {formatRegistrationDeadline(contest.registrationClosesAt)}
             </p>
           )}
+          <ContestHighlights contest={contest} />
           {contest.description && <p className="contest-description">{contest.description}</p>}
         </div>
       </section>
