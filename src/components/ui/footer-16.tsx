@@ -3,11 +3,19 @@ import { BrandLogo } from "@/components/brand-logo";
 
 const navLinks = [
   { label: "About", href: "/about" },
-  { label: "Contact Us", href: "/contact" },
   { label: "Meet the Team", href: "/team" },
 ];
 
 const socials = [
+  {
+    label: "GitHub",
+    href: "https://github.com/Knuth-Programming-Hub",
+    icon: (
+      <svg aria-hidden="true" viewBox="0 0 24 24" className="size-4 fill-current">
+        <path d="M12 .9a11.1 11.1 0 0 0-3.51 21.63c.55.1.76-.24.76-.54v-2.08c-3.1.67-3.76-1.32-3.76-1.32-.5-1.28-1.24-1.62-1.24-1.62-1.01-.69.08-.68.08-.68 1.12.08 1.71 1.15 1.71 1.15 1 .1.63 2.16 3.32 1.55.1-.72.39-1.21.7-1.49-2.48-.28-5.09-1.24-5.09-5.5 0-1.21.43-2.2 1.15-2.98-.12-.28-.5-1.42.11-2.95 0 0 .94-.3 3.05 1.14a10.6 10.6 0 0 1 5.55 0c2.11-1.44 3.05-1.14 3.05-1.14.61 1.53.23 2.67.11 2.95.72.78 1.15 1.77 1.15 2.98 0 4.27-2.61 5.21-5.1 5.49.4.35.76 1.02.76 2.06v3.05c0 .3.2.65.77.54A11.1 11.1 0 0 0 12 .9Z" />
+      </svg>
+    ),
+  },
   {
     label: "Instagram",
     href: "https://www.instagram.com/knuth_jiit/",
