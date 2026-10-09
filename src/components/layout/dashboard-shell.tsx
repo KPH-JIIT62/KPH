@@ -16,6 +16,7 @@ import { useTheme } from "@/components/theme-provider";
 import { useAuth } from "@/components/auth-provider";
 import { useAccount } from "@/components/account-provider";
 import { MemberAvatar, ProfileProvider, useProfile } from "@/components/profile-provider";
+import { RoleChips } from "@/components/role-chips";
 
 function ProfileMenu() {
   const pathname = usePathname();
@@ -60,6 +61,12 @@ function ProfileMenu() {
             <strong>{displayName}</strong>
             <span>{enrollmentNumber}</span>
           </div>
+
+          {account && (
+            <div className="dropdown-roles">
+              <RoleChips account={account} />
+            </div>
+          )}
 
           <div className="dropdown-separator" />
 

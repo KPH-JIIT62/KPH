@@ -543,7 +543,7 @@ html[data-theme="dark"] .brand-logo-dark {
   position: absolute;
   top: calc(100% + 10px);
   right: 0;
-  width: min(260px, 80vw);
+  width: min(280px, 86vw);
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -3421,3 +3421,92 @@ fieldset.profile-field {
 .status-pill.is-soon { background: var(--mark-sand-background); color: var(--mark-sand-text); }
 .contest-card-footer { flex-wrap: wrap; }
 .contest-deadline { color: var(--accent-text); font-weight: 500; }
+
+/* Role tags (Student / Core Team / Coordinator / Volunteer): same rounded look as .platform-link, smaller */
+.role-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.role-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 11px 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-muted);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+.role-chip.is-core-team {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
+  color: var(--accent-text);
+}
+
+.role-chip.is-coordinator {
+  background: var(--mark-sand-background);
+  border-color: color-mix(in srgb, var(--mark-sand-text) 28%, transparent);
+  color: var(--mark-sand-text);
+}
+
+.role-chip.is-volunteer {
+  background: var(--mark-sage-background);
+  border-color: color-mix(in srgb, var(--mark-sage-text) 28%, transparent);
+  color: var(--mark-sage-text);
+}
+
+.dropdown-roles {
+  padding: 2px 10px 10px;
+}
+
+/* Dashboard: "Upcoming Contests" */
+.dashboard-section-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.dashboard-section-header h2 {
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.4px;
+}
+
+.dashboard-section-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--accent-text);
+}
+
+.dashboard-section-link:hover {
+  text-decoration: underline;
+}
+
+.upcoming-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
+  gap: 18px;
+  align-items: start;
+}
+
+.upcoming-grid .contest-highlight {
+  margin-bottom: 0;
+}
+
+.upcoming-grid .contest-highlight h2 {
+  font-size: clamp(20px, 2.6vw, 26px);
+}

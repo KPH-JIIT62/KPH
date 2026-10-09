@@ -33,3 +33,10 @@ export function contestBadge(contest: Contest, registered: boolean): { label: st
   if (contest.registrationStatus === "OPEN") return { label: "Registration open", tone: "open" };
   return { label: "Registration closed", tone: "closed" };
 }
+
+// "Upcoming" = has not finished yet (a contest that is on right now counts). If no end time is set we use the start time;
+// a contest with no dates at all ("Date to be announced") is still to come.
+export function isUpcoming(contest: Contest, now: Date = new Date()) {
+  const last = contest.endsAt ?? contest.startsAt;
+  return last === null || new Date(last).getTime() > now.getTime();
+}

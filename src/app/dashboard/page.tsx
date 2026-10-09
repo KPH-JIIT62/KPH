@@ -1,14 +1,16 @@
 "use client";
 
 import { useContests } from "@/lib/use-contests";
-import { ContestHighlight } from "@/components/contests/contest-tile";
+import { DashboardGreeting } from "@/components/dashboard/dashboard-greeting";
+import { UpcomingContests } from "@/components/dashboard/upcoming-contests";
 import AITextLoading from "@/components/ui/ai-text-loading";
 
-// The dashboard shows one tile per contest, straight from the database, so a new contest appears here by itself.
+// A greeting, then the "Upcoming Contests" section. Contests come straight from the database, so a new contest appears here by itself.
 export default function DashboardPage() {
   const { state, retry } = useContests();
   return (
     <div className="section-page">
+      <DashboardGreeting />
       {state.status === "loading" && <AITextLoading />}
       {state.status === "error" && (
         <div role="alert">
@@ -16,7 +18,7 @@ export default function DashboardPage() {
           <button className="button button-secondary" onClick={retry}>Try again</button>
         </div>
       )}
-      {state.status === "ready" && state.contests.map((contest) => <ContestHighlight key={contest.id} contest={contest} />)}
+      {state.status === "ready" && <UpcomingContests contests={state.contests} />}
     </div>
   );
 }
