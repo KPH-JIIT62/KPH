@@ -3242,7 +3242,7 @@ fieldset.profile-field {
 /* Contests */
 .contest-list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); /* min(100%, ...) so a narrow phone never overflows */
   gap: 18px;
   max-width: 900px;
 }
@@ -3509,4 +3509,12 @@ fieldset.profile-field {
 
 .upcoming-grid .contest-highlight h2 {
   font-size: clamp(20px, 2.6vw, 26px);
+}
+
+/* Phones: iOS Safari zooms the whole page when a field smaller than 16px is tapped, so fields are 16px there */
+@media (max-width: 767px) {
+  .profile-field input,
+  .locked-field input {
+    font-size: 16px;
+  }
 }
