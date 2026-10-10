@@ -379,3 +379,399 @@ describe("contests and registration", () => {
     await assert.rejects(pool.query("DELETE FROM contests WHERE slug = $1", [SLUG]), /violates foreign key/);
   });
 });
+<<<<<<< Updated upstream
+=======
+
+describe("core team roster: CSV parsing", () => {
+  const { parseCoreTeamCsv } = require("../src/utils/coreTeamCsv");
+  test("reads the real file layout: comments, header, roles in any case, Windows line endings, BOM, trailing commas", () => {
+    const text = "\uFEFF# private list\r\n# second comment\r\nenrollment_no,role\r\n2401030289,COORDINATOR\r\n 2501030069 , volunteer ,\r\n\r\n\"992501030399\",\"Volunteer\"\r\n";
+    const { entries, errors } = parseCoreTeamCsv(text);
+    assert.deepEqual(errors, []);
+    assert.deepEqual(entries, [
+      { enrollmentNo: "2401030289", role: "COORDINATOR" },
+      { enrollmentNo: "2501030069", role: "VOLUNTEER" },
+      { enrollmentNo: "992501030399", role: "VOLUNTEER" },
+    ]);
+  });
+  test("reports EVERY problem with its line number, and still lists the good rows", () => {
+    const { entries, errors } = parseCoreTeamCsv("enrollment_no,role\n2501030117,BOSS\n9.9E+11,VOLUNTEER\n123,VOLUNTEER\n2501030069,VOLUNTEER\n2501030069,COORDINATOR\n2501030018\n2501030016,VOLUNTEER,extra\n");
+    assert.deepEqual(errors.map((e) => e.line), [2, 3, 4, 6, 7, 8]);
+    assert.match(errors[0].message, /not a valid role/);
+    assert.match(errors[1].message, /scientific notation/);
+    assert.match(errors[3].message, /already listed on line 5/);
+    assert.match(errors[4].message, /exactly 2 columns/);
+    assert.deepEqual(entries, [{ enrollmentNo: "2501030069", role: "VOLUNTEER" }]);
+  });
+  test("a missing or wrong header, and an empty file, are errors", () => {
+    assert.equal(parseCoreTeamCsv("2501030069,VOLUNTEER\n").errors[0].line, 1);
+    assert.equal(parseCoreTeamCsv("enrollment,role\n").errors.length, 1);
+    assert.equal(parseCoreTeamCsv("").errors.length, 1);
+    assert.equal(parseCoreTeamCsv("# only comments\n").errors.length, 1);
+  });
+  test("enrollment numbers must follow the campus rules (10 digits for campus 62, 12 starting 99 for campus 128)", () => {
+    const { entries, errors } = parseCoreTeamCsv("enrollment_no,role\n2501030069,VOLUNTEER\n992501030399,VOLUNTEER\n9921103001,VOLUNTEER\n25010300691,VOLUNTEER\nabc,VOLUNTEER\n");
+    assert.equal(entries.length, 2);
+    assert.deepEqual(errors.map((e) => e.line), [4, 5, 6]);
+  });
+});
+
+describe("core team roster: database and import", () => {
+  const { createCoreTeamService } = require("../src/services/coreTeamService");
+  const importer = require("../scripts/import-core-team");
+  const os = require("node:os");
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const roster = async () => Object.fromEntries((await pool.query("SELECT enrollment_no, role FROM core_team_members")).rows.map((r) => [r.enrollment_no, r.role]));
+  const writeCsv = (text) => {
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "kph-")), "core-team.csv");
+    fs.writeFileSync(file, text);
+    return file;
+  };
+  const quiet = () => {};
+
+  test("the database refuses an unknown role or a malformed enrollment number", async () => {
+    await assert.rejects(pool.query("INSERT INTO core_team_members VALUES ('2501030069', 'BOSS')"), /core_team_role_valid/);
+    await assert.rejects(pool.query("INSERT INTO core_team_members VALUES ('abc', 'VOLUNTEER')"), /core_team_enrollment_format/);
+    await assert.rejects(pool.query("INSERT INTO core_team_members VALUES (NULL, 'VOLUNTEER')"));
+  });
+  test("sync adds, changes and removes so the table matches the list exactly, and reports it", async () => {
+    const svc = createCoreTeamService(pool);
+    let r = await svc.sync([{ enrollmentNo: "2401030289", role: "COORDINATOR" }, { enrollmentNo: "2501030069", role: "VOLUNTEER" }]);
+    assert.equal(r.added.length, 2);
+    assert.deepEqual(await roster(), { 2401030289: "COORDINATOR", 2501030069: "VOLUNTEER" });
+    r = await svc.sync([{ enrollmentNo: "2401030289", role: "VOLUNTEER" }, { enrollmentNo: "2501030069", role: "VOLUNTEER" }, { enrollmentNo: "992501030399", role: "VOLUNTEER" }]);
+    assert.deepEqual(r.changed, [{ enrollmentNo: "2401030289", from: "COORDINATOR", to: "VOLUNTEER" }]);
+    assert.deepEqual(r.added, [{ enrollmentNo: "992501030399", role: "VOLUNTEER" }]);
+    assert.equal(r.unchanged, 1);
+    r = await svc.sync([{ enrollmentNo: "2501030069", role: "VOLUNTEER" }]);
+    assert.deepEqual(r.removed.map((x) => x.enrollmentNo).sort(), ["2401030289", "992501030399"]);
+    assert.deepEqual(await roster(), { 2501030069: "VOLUNTEER" });
+  });
+  test("a dry run reports the same changes but writes nothing", async () => {
+    const svc = createCoreTeamService(pool);
+    await svc.sync([{ enrollmentNo: "2501030069", role: "VOLUNTEER" }]);
+    const r = await svc.sync([{ enrollmentNo: "2501030069", role: "COORDINATOR" }, { enrollmentNo: "2401030289", role: "VOLUNTEER" }], { dryRun: true });
+    assert.equal(r.added.length, 1);
+    assert.equal(r.changed.length, 1);
+    assert.deepEqual(await roster(), { 2501030069: "VOLUNTEER" });
+  });
+  test("the import script applies a CSV and is safe to run again", async () => {
+    const file = writeCsv("# private\nenrollment_no,role\n2401030289,COORDINATOR\n2501030069,VOLUNTEER\n992501030399,VOLUNTEER\n");
+    await importer.run(pool, [file], quiet);
+    assert.deepEqual(await roster(), { 2401030289: "COORDINATOR", 2501030069: "VOLUNTEER", 992501030399: "VOLUNTEER" });
+    const again = await importer.run(pool, [file], quiet);
+    assert.deepEqual([again.added.length, again.changed.length, again.removed.length, again.unchanged], [0, 0, 0, 3]);
+  });
+  test("editing the CSV and importing again promotes, adds and removes people", async () => {
+    await importer.run(pool, [writeCsv("enrollment_no,role\n2401030289,COORDINATOR\n2501030069,VOLUNTEER\n2501030117,VOLUNTEER\n")], quiet);
+    await importer.run(pool, [writeCsv("enrollment_no,role\n2401030289,COORDINATOR\n2501030069,COORDINATOR\n992501030399,VOLUNTEER\n")], quiet);
+    assert.deepEqual(await roster(), { 2401030289: "COORDINATOR", 2501030069: "COORDINATOR", 992501030399: "VOLUNTEER" });
+  });
+  test("a CSV with any error imports NOTHING", async () => {
+    await importer.run(pool, [writeCsv("enrollment_no,role\n2501030069,VOLUNTEER\n")], quiet);
+    await assert.rejects(importer.run(pool, [writeCsv("enrollment_no,role\n2401030289,COORDINATOR\n2501030117,BOSS\n")], quiet), /1 problem.*Nothing was imported/s);
+    assert.deepEqual(await roster(), { 2501030069: "VOLUNTEER" });
+  });
+  test("--dry-run writes nothing; an empty list is refused unless --allow-empty", async () => {
+    await importer.run(pool, [writeCsv("enrollment_no,role\n2501030069,VOLUNTEER\n")], quiet);
+    await importer.run(pool, [writeCsv("enrollment_no,role\n2401030289,COORDINATOR\n"), "--dry-run"], quiet);
+    assert.deepEqual(await roster(), { 2501030069: "VOLUNTEER" });
+    const empty = writeCsv("enrollment_no,role\n");
+    await assert.rejects(importer.run(pool, [empty], quiet), /would REMOVE all 1/);
+    assert.deepEqual(await roster(), { 2501030069: "VOLUNTEER" });
+    await importer.run(pool, [empty, "--allow-empty"], quiet);
+    assert.deepEqual(await roster(), {});
+  });
+  test("a missing file or an unknown option is a clear error", async () => {
+    await assert.rejects(importer.run(pool, ["/nope/missing.csv"], quiet), /File not found/);
+    await assert.rejects(importer.run(pool, [writeCsv("enrollment_no,role\n"), "--force"], quiet), /Unknown option --force/);
+  });
+});
+
+describe("core team roles in the API", () => {
+  const me = async (token) => (await (await call("GET", "/api/users/me", { token })).json()).user;
+  const put = (token, body) => call("PUT", "/api/users/me/profile", { token, body });
+  const addToRoster = (enrollmentNo, role) => pool.query("INSERT INTO core_team_members (enrollment_no, role) VALUES ($1, $2)", [enrollmentNo, role]);
+
+  test("someone not on the list is a plain student with no core team role", async () => {
+    const user = await me("alice");
+    assert.equal(user.role, "STUDENT");
+    assert.equal(user.coreTeamRole, null);
+  });
+  test("a listed person is STILL a student, and additionally COORDINATOR or VOLUNTEER (both campuses)", async () => {
+    await addToRoster("2501030001", "COORDINATOR"); // alice, campus 62
+    await addToRoster("992501030002", "VOLUNTEER"); // bob, campus 128
+    const alice = await me("alice");
+    assert.equal(alice.role, "STUDENT");
+    assert.equal(alice.coreTeamRole, "COORDINATOR");
+    const bob = await me("bob");
+    assert.equal(bob.role, "STUDENT");
+    assert.equal(bob.coreTeamRole, "VOLUNTEER");
+    assert.equal((await me("shrey")).coreTeamRole, null); // others unaffected
+  });
+  test("a person listed BEFORE they ever sign in gets the role on their first login", async () => {
+    await addToRoster("2501030001", "VOLUNTEER");
+    assert.equal((await pool.query("SELECT count(*)::int AS n FROM users")).rows[0].n, 0);
+    assert.equal((await me("alice")).coreTeamRole, "VOLUNTEER");
+  });
+  test("roster changes apply on the very next request, with no re-login and no user row rewritten", async () => {
+    await me("alice");
+    const before = (await pool.query("SELECT updated_at FROM users")).rows[0].updated_at.getTime();
+    assert.equal((await me("alice")).coreTeamRole, null);
+    await addToRoster("2501030001", "VOLUNTEER");
+    assert.equal((await me("alice")).coreTeamRole, "VOLUNTEER");
+    await pool.query("UPDATE core_team_members SET role = 'COORDINATOR'");
+    assert.equal((await me("alice")).coreTeamRole, "COORDINATOR");
+    await pool.query("DELETE FROM core_team_members");
+    assert.equal((await me("alice")).coreTeamRole, null);
+    assert.equal((await pool.query("SELECT updated_at FROM users")).rows[0].updated_at.getTime(), before);
+  });
+  test("the role survives onboarding and appears in every response that returns the user", async () => {
+    await addToRoster("2501030001", "COORDINATOR");
+    const saved = await (await put("alice", { batch: "B10", codeforcesHandle: "alice_cf" })).json();
+    assert.equal(saved.user.coreTeamRole, "COORDINATOR");
+    const reg = await (await call("POST", "/api/contests/encode-26-2/registrations", { token: "alice", body: { hackerrankHandle: "alice_hr" } })).json();
+    assert.equal(reg.user.coreTeamRole, "COORDINATOR");
+    assert.equal(reg.user.role, "STUDENT");
+  });
+  test("a client cannot grant itself a role: role / coreTeamRole in a request are ignored", async () => {
+    await call("GET", "/api/users/me", { token: "alice" });
+    await put("alice", { batch: "B10", codeforcesHandle: "alice_cf", role: "ADMIN", coreTeamRole: "COORDINATOR", isCoreTeam: true });
+    const user = await me("alice");
+    assert.equal(user.role, "STUDENT");
+    assert.equal(user.coreTeamRole, null);
+    assert.equal((await pool.query("SELECT count(*)::int AS n FROM core_team_members")).rows[0].n, 0);
+  });
+  test("TYPING a listed enrollment number does not grant the role: only the verified login email counts", async () => {
+    await addToRoster("2401030007", "COORDINATOR");
+    // prof.sharma@ and abc.xyz@ have no number in their email, so they type one at onboarding
+    const saved = await put("staff", { batch: "B10", enrollmentNo: "2401030007", codeforcesHandle: "sneaky" });
+    assert.equal(saved.status, 200);
+    const staff = await me("staff");
+    assert.equal(staff.profile.enrollmentNo, "2401030007"); // their profile says it...
+    assert.equal(staff.coreTeamRole, null); // ...but it proves nothing, so no role
+    assert.equal((await me("abc")).coreTeamRole, null);
+    assert.equal(staff.role, "STUDENT");
+  });
+  test("the roster is never exposed: there is no endpoint that lists it, and /me shows only your own role", async () => {
+    await addToRoster("2501030001", "COORDINATOR");
+    await addToRoster("992501030002", "VOLUNTEER");
+    const body = JSON.stringify(await me("shrey"));
+    assert.ok(!body.includes("2501030001") && !body.includes("992501030002"));
+    for (const route of ["/api/core-team", "/api/users", "/api/roles"]) assert.equal((await call("GET", route, { token: "alice" })).status, 404, route);
+  });
+});
+
+describe("sessions and registration", () => {
+  const SLUG = "interview-talks-by-seniors";
+  const BATCHES = { alice: "B10", bob: "F10", fresher: "B1" }; // alice = campus 62, bob = campus 128
+  const me = async (token) => (await (await call("GET", "/api/users/me", { token })).json()).user;
+  const finishProfile = (token) => call("PUT", "/api/users/me/profile", { token, body: { batch: BATCHES[token] } });
+  const register = (token, body = {}, slug = SLUG) => call("POST", `/api/sessions/${slug}/registrations`, { token, body });
+  const registrations = async () => (await pool.query("SELECT * FROM session_registrations")).rows;
+  const restoreSession = () => pool.query("UPDATE sessions SET registration_status = 'OPEN', registration_closes_at = NULL WHERE slug = $1", [SLUG]);
+
+  test("everything requires login", async () => {
+    assert.equal((await call("GET", "/api/sessions")).status, 401);
+    assert.equal((await call("GET", `/api/sessions/${SLUG}`)).status, 401);
+    assert.equal((await call("POST", `/api/sessions/${SLUG}/registrations`, { body: {} })).status, 401);
+  });
+  test("the list has Interview Talks by Seniors: 27 Oct 2026, 17:00-18:30 IST, LT3, open, not yet registered", async () => {
+    const { sessions } = await (await call("GET", "/api/sessions", { token: "alice" })).json();
+    const talk = sessions.find((s) => s.slug === SLUG);
+    assert.equal(talk.title, "Interview Talks by Seniors");
+    assert.equal(talk.venue, "LT3");
+    assert.equal(new Date(talk.startsAt).toISOString(), "2026-10-27T11:30:00.000Z"); // 17:00 in India
+    assert.equal(new Date(talk.endsAt).toISOString(), "2026-10-27T13:00:00.000Z"); // 18:30 in India
+    assert.equal(talk.registrationStatus, "OPEN");
+    assert.equal(talk.registrationOpen, true);
+    assert.equal(talk.registrationClosesAt, null);
+    assert.equal(talk.registration, null);
+  });
+  test("the session page data carries the same schedule and status", async () => {
+    const { session, registration } = await (await call("GET", `/api/sessions/${SLUG}`, { token: "alice" })).json();
+    assert.equal(session.venue, "LT3");
+    assert.equal(session.registrationStatus, "OPEN");
+    assert.equal(registration, null);
+  });
+  test("unknown session -> 404, also for slugs that cannot exist", async () => {
+    assert.equal((await call("GET", "/api/sessions/nope", { token: "alice" })).status, 404);
+    assert.equal((await call("GET", "/api/sessions/NOT%20A%20SLUG!", { token: "alice" })).status, 404);
+    await finishProfile("alice");
+    const res = await register("alice", {}, "nope");
+    assert.equal(res.status, 404);
+    assert.equal((await res.json()).error.code, "SESSION_NOT_FOUND");
+  });
+  test("registering before the profile is complete -> 409 and nothing is saved", async () => {
+    const res = await register("alice");
+    assert.equal(res.status, 409);
+    assert.equal((await res.json()).error.code, "PROFILE_INCOMPLETE");
+    assert.equal((await registrations()).length, 0);
+  });
+  test("a good registration needs NO body, is saved, and shows up on the list and the page", async () => {
+    await finishProfile("alice");
+    const res = await register("alice", undefined);
+    assert.equal(res.status, 201);
+    const body = await res.json();
+    assert.deepEqual(Object.keys(body), ["registration"]);
+    assert.deepEqual(Object.keys(body.registration).sort(), ["createdAt", "id"]); // nothing about the person is stored on it
+    const { sessions } = await (await call("GET", "/api/sessions", { token: "alice" })).json();
+    assert.equal(sessions.find((s) => s.slug === SLUG).registration.id, body.registration.id);
+    const detail = await (await call("GET", `/api/sessions/${SLUG}`, { token: "alice" })).json();
+    assert.equal(detail.registration.id, body.registration.id);
+    assert.equal((await registrations()).length, 1);
+  });
+  test("the registration columns hold ONLY ids and a time: who registered is read from the profile", async () => {
+    const columns = (await pool.query("SELECT column_name FROM information_schema.columns WHERE table_name = 'session_registrations'")).rows.map((r) => r.column_name).sort();
+    assert.deepEqual(columns, ["created_at", "id", "session_id", "user_id"]);
+  });
+  test("identity and profile details come from the server, never from the request body", async () => {
+    await finishProfile("alice");
+    await finishProfile("bob");
+    const bobId = (await pool.query("SELECT id FROM users WHERE firebase_uid = 'uid-bob'")).rows[0].id;
+    const res = await register("alice", { userId: bobId, user_id: bobId, batch: "Z99", branch: "ECE", enrollmentNo: "1", name: "Mallory", sessionId: "x" });
+    assert.equal(res.status, 201);
+    const rows = await registrations();
+    assert.equal(rows.length, 1);
+    assert.notEqual(rows[0].user_id, bobId);
+    const alice = await me("alice");
+    assert.equal(alice.profile.batch, "B10");
+    assert.equal(alice.profile.branch, "CSE");
+  });
+  test("a client-supplied Year of Study that differs from the profile is refused, and nothing is saved", async () => {
+    await finishProfile("alice"); // 2nd year
+    for (const yearOfStudy of [1, 3, 4, "3", "3rd Year", "third", 99, null, "", {}, [], true]) {
+      const res = await register("alice", { yearOfStudy });
+      assert.equal(res.status, 400, `yearOfStudy ${JSON.stringify(yearOfStudy)}`);
+      const { error } = await res.json();
+      assert.equal(error.code, "VALIDATION_ERROR");
+      assert.ok(error.fields.yearOfStudy);
+    }
+    assert.equal((await registrations()).length, 0);
+  });
+  test("a client-supplied Year of Study that MATCHES the profile is accepted", async () => {
+    await finishProfile("alice");
+    assert.equal((await register("alice", { yearOfStudy: "2nd Year" })).status, 201);
+    await finishProfile("fresher");
+    assert.equal((await register("fresher", { yearOfStudy: 1 })).status, 201);
+  });
+  test("with no valid Year of Study on the profile the registration is refused, with the support address", async () => {
+    await call("GET", "/api/users/me", { token: "legacy" });
+    await pool.query("UPDATE users SET batch = 'B10', branch = 'CSE', profile_completed_at = now() WHERE firebase_uid = 'uid-legacy'");
+    let res = await register("legacy");
+    assert.equal(res.status, 409);
+    let { error } = await res.json();
+    assert.equal(error.code, "YEAR_OF_STUDY_UNAVAILABLE");
+    assert.match(error.message, /kph\.jiit@gmail\.com/);
+    await finishProfile("alice");
+    nowValue = new Date("2029-08-01T12:00:00+05:30"); // alice is past the 4-year programme
+    await restoreSession();
+    await pool.query("UPDATE sessions SET ends_at = '2030-01-01+05:30' WHERE slug = $1", [SLUG]); // keep the session itself open for this check
+    try {
+      res = await register("alice");
+      assert.equal(res.status, 409);
+      ({ error } = await res.json());
+      assert.equal(error.code, "YEAR_OF_STUDY_UNAVAILABLE");
+    } finally {
+      await pool.query("UPDATE sessions SET ends_at = '2026-10-27 18:30+05:30' WHERE slug = $1", [SLUG]);
+    }
+    assert.equal((await registrations()).length, 0);
+  });
+  test("everyone is judged by THEIR OWN profile (both campuses register independently)", async () => {
+    await finishProfile("alice");
+    await finishProfile("bob");
+    assert.equal((await register("alice")).status, 201);
+    assert.equal((await register("bob")).status, 201);
+    assert.equal((await registrations()).length, 2);
+  });
+  test("registering twice -> 409 ALREADY_REGISTERED and still exactly one registration", async () => {
+    await finishProfile("alice");
+    assert.equal((await register("alice")).status, 201);
+    const again = await register("alice");
+    assert.equal(again.status, 409);
+    assert.equal((await again.json()).error.code, "ALREADY_REGISTERED");
+    assert.equal((await registrations()).length, 1);
+  });
+  test("10 simultaneous registrations by the same person create exactly one", async () => {
+    await finishProfile("alice");
+    const results = await Promise.all(Array.from({ length: 10 }, () => register("alice")));
+    assert.equal(results.filter((r) => r.status === 201).length, 1);
+    assert.equal(results.filter((r) => r.status === 409).length, 9);
+    assert.equal((await registrations()).length, 1);
+  });
+  test("without its own deadline, registration closes by itself when the session ends (18:30 IST, to the second)", async () => {
+    await finishProfile("alice");
+    await finishProfile("bob");
+    nowValue = new Date("2026-10-27T18:29:59+05:30"); // one second before it ends: still open
+    let { session } = await (await call("GET", `/api/sessions/${SLUG}`, { token: "alice" })).json();
+    assert.equal(session.registrationStatus, "OPEN");
+    assert.equal((await register("alice")).status, 201);
+    nowValue = new Date("2026-10-27T18:30:00+05:30"); // the moment it ends
+    ({ session } = await (await call("GET", `/api/sessions/${SLUG}`, { token: "bob" })).json());
+    assert.equal(session.registrationStatus, "CLOSED");
+    assert.equal(session.registrationOpen, false);
+    const res = await register("bob");
+    assert.equal(res.status, 409);
+    assert.equal((await res.json()).error.code, "REGISTRATION_CLOSED");
+    assert.equal((await registrations()).length, 1);
+  });
+  test("an organizer can close registration earlier with registration_closes_at (to the second)", async () => {
+    await finishProfile("alice");
+    await pool.query("UPDATE sessions SET registration_closes_at = '2026-10-27 17:00:00+05:30' WHERE slug = $1", [SLUG]);
+    try {
+      nowValue = new Date("2026-10-27T16:59:59+05:30");
+      assert.equal((await (await call("GET", `/api/sessions/${SLUG}`, { token: "alice" })).json()).session.registrationStatus, "OPEN");
+      nowValue = new Date("2026-10-27T17:00:00+05:30");
+      const res = await register("alice");
+      assert.equal(res.status, 409);
+      assert.equal((await res.json()).error.code, "REGISTRATION_CLOSED");
+      assert.equal((await (await call("GET", `/api/sessions/${SLUG}`, { token: "alice" })).json()).session.registrationClosesAt !== null, true);
+    } finally {
+      await restoreSession();
+    }
+  });
+  test("the SOON and CLOSED switches work: nobody can register until an organizer opens it", async () => {
+    await finishProfile("alice");
+    try {
+      await pool.query("UPDATE sessions SET registration_status = 'SOON' WHERE slug = $1", [SLUG]);
+      let res = await register("alice");
+      assert.equal(res.status, 409);
+      assert.equal((await res.json()).error.code, "REGISTRATION_NOT_OPEN");
+      assert.equal((await (await call("GET", `/api/sessions/${SLUG}`, { token: "alice" })).json()).session.registrationStatus, "SOON");
+      await pool.query("UPDATE sessions SET registration_status = 'CLOSED' WHERE slug = $1", [SLUG]);
+      res = await register("alice");
+      assert.equal(res.status, 409);
+      assert.equal((await res.json()).error.code, "REGISTRATION_CLOSED");
+      await restoreSession();
+      assert.equal((await register("alice")).status, 201);
+    } finally {
+      await restoreSession();
+    }
+  });
+  test("the database refuses impossible schedules and unknown registration statuses", async () => {
+    await assert.rejects(pool.query("UPDATE sessions SET ends_at = starts_at - interval '1 hour' WHERE slug = $1", [SLUG]), /session_ends_after_it_starts/);
+    await assert.rejects(pool.query("UPDATE sessions SET registration_closes_at = ends_at + interval '1 hour' WHERE slug = $1", [SLUG]), /session_registration_closes_by_the_end/);
+    await assert.rejects(pool.query("UPDATE sessions SET registration_status = 'MAYBE' WHERE slug = $1", [SLUG]), /session_registration_status_valid/);
+  });
+  test("a session and a contest are separate: registering for one does not register for the other", async () => {
+    await finishProfile("alice");
+    assert.equal((await register("alice")).status, 201);
+    const { contests } = await (await call("GET", "/api/contests", { token: "alice" })).json();
+    assert.ok(contests.every((c) => c.registration === null));
+    assert.equal((await call("POST", "/api/contests/encode-26-2/registrations", { token: "alice", body: { hackerrankHandle: "alice_hr" } })).status, 201);
+    assert.equal((await registrations()).length, 1);
+  });
+  test("deleting a user row (as you do to re-test) also removes their session registrations", async () => {
+    await finishProfile("alice");
+    assert.equal((await register("alice")).status, 201);
+    await pool.query("DELETE FROM users WHERE firebase_uid = 'uid-alice'");
+    assert.equal((await registrations()).length, 0);
+  });
+  test("a session that has registrations cannot be deleted by accident", async () => {
+    await finishProfile("alice");
+    assert.equal((await register("alice")).status, 201); // proven BEFORE the delete is tried, so a failure here can never delete the seed
+    await assert.rejects(pool.query("DELETE FROM sessions WHERE slug = $1", [SLUG]), /violates foreign key/);
+  });
+});
+>>>>>>> Stashed changes

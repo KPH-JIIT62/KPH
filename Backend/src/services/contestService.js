@@ -2,6 +2,10 @@
 // (the registration, and the HackerRank ID on the user's profile) inside ONE transaction,
 // so either both changes happen or neither does.
 const { HttpError } = require("../utils/HttpError");
+<<<<<<< Updated upstream
+=======
+const { registrationStatus } = require("../utils/contestStatus");
+>>>>>>> Stashed changes
 
 const toPublicContest = (row) => ({
   id: row.id,
@@ -51,8 +55,14 @@ function createContestService(pool, userService) {
       if (!contest) throw new HttpError(404, "CONTEST_NOT_FOUND", "Contest not found.");
       if (!contest.registration_open) throw new HttpError(409, "REGISTRATION_CLOSED", "Registration for this contest is closed.");
 
+<<<<<<< Updated upstream
       const me = (await client.query("SELECT profile_completed_at FROM users WHERE id = $1", [userId])).rows[0];
       if (!me?.profile_completed_at) throw new HttpError(409, "PROFILE_INCOMPLETE", "Please complete your profile before registering.");
+=======
+      // The saved profile is the source of truth for who is registering and for their Year of Study.
+      const me = (await client.query("SELECT * FROM users WHERE id = $1", [userId])).rows[0];
+      userService.assertProfileReadyToRegister(me, claimedYearOfStudy);
+>>>>>>> Stashed changes
 
       const { rows } = await client.query(
         `INSERT INTO contest_registrations (contest_id, user_id, team_name, hackerrank_handle)

@@ -11,6 +11,9 @@ const { createUsersRouter } = require("./routes/users");
 const { createContestService } = require("./services/contestService");
 const { createContestsController } = require("./controllers/contestsController");
 const { createContestsRouter } = require("./routes/contests");
+const { createSessionService } = require("./services/sessionService");
+const { createSessionsController } = require("./controllers/sessionsController");
+const { createSessionsRouter } = require("./routes/sessions");
 
 function createApp({ env, pool, verifyToken }) {
   const userService = createUserService(pool);
@@ -34,6 +37,9 @@ function createApp({ env, pool, verifyToken }) {
   app.use("/api/users", requireLogin, createUsersRouter(createUsersController(userService)));
   const contestService = createContestService(pool, userService);
   app.use("/api/contests", requireLogin, createContestsRouter(createContestsController(contestService)));
+
+  const sessionService = createSessionService(pool, userService, { now });
+  app.use("/api/sessions", requireLogin, createSessionsRouter(createSessionsController(sessionService)));
 
   app.use(notFound);
   app.use(errorHandler);
