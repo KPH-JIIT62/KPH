@@ -240,6 +240,53 @@ The backend reads the member’s profile details (enrollment number, batch, bran
 
 (`contest_registrations.team_name` is no longer used; the column is kept, nullable, so old registrations keep their data. See `006_registration_no_team_name.sql`.)
 
+### Sessions
+
+Sessions are talks and workshops. They work like contests **without any form field to type**: a student clicks Register, and who they are comes from their saved profile.
+
+- The tab is **Sessions** (`/dashboard/sessions`, and `/dashboard/sessions/[slug]` for the page + registration).
+- Upcoming sessions also appear on the dashboard under **Upcoming Sessions**. A finished session drops off the dashboard; the Sessions page keeps showing it.
+- The registration form shows **Enrollment number, Name, Batch, Branch and Year of Study**, all read-only and filled from the profile. The request has no body: the server reads the same details from the profile, so they cannot be changed or faked. The same rules as contests apply (profile must be complete, valid Year of Study, a mismatching `yearOfStudy` is refused with `400`).
+- Tables (migration `011_sessions.sql`): `sessions` and `session_registrations` (one registration per person per session, enforced by the database). The registration stores only ids and a time; name, batch and the rest are always read from the profile.
+- API (all authenticated): `GET /api/sessions`, `GET /api/sessions/:slug`, `POST /api/sessions/:slug/registrations`.
+- Registration status works as for contests (`SOON` / `OPEN` / `CLOSED`). With no `registration_closes_at`, a session **closes registration by itself when it ends**.
+
+Edit a session (all times are Indian time):
+
+```sql
+UPDATE sessions SET venue = 'LT3', starts_at = '2026-10-27 17:00+05:30', ends_at = '2026-10-27 18:30+05:30',
+                    description = '...', updated_at = now()
+ WHERE slug = 'interview-talks-by-seniors';
+
+UPDATE sessions SET registration_closes_at = '2026-10-27 16:00+05:30' WHERE slug = 'interview-talks-by-seniors'; -- close earlier
+UPDATE sessions SET registration_status = 'CLOSED' WHERE slug = 'interview-talks-by-seniors';                      -- or switch off now
+```
+
+Add a new session (it appears on the Sessions page and the dashboard by itself):
+
+```sql
+INSERT INTO sessions (slug, title, description, venue, starts_at, ends_at)
+VALUES ('resume-workshop', 'Resume Workshop', 'How to write a resume that gets noticed.', 'LT2',
+        '2026-11-05 17:00+05:30', '2026-11-05 18:00+05:30');
+```
+
+Attendee list for a session (Year of Study is not stored, so the query works it out from the enrollment number and the July 20 rule):
+
+```sql
+WITH people AS (
+  SELECT u.enrollment_no, u.display_name, u.batch, u.branch, r.created_at AS registered_at,
+         2000 + (CASE WHEN length(u.enrollment_no) = 12 THEN substr(u.enrollment_no, 3, 2) ELSE substr(u.enrollment_no, 1, 2) END)::int AS admission_year,
+         EXTRACT(YEAR FROM (now() AT TIME ZONE 'Asia/Kolkata'))::int
+           - CASE WHEN (now() AT TIME ZONE 'Asia/Kolkata')::date < make_date(EXTRACT(YEAR FROM (now() AT TIME ZONE 'Asia/Kolkata'))::int, 7, 20) THEN 1 ELSE 0 END AS academic_year
+    FROM session_registrations r
+    JOIN sessions s ON s.id = r.session_id
+    JOIN users u    ON u.id = r.user_id
+   WHERE s.slug = 'interview-talks-by-seniors'
+)
+SELECT enrollment_no, display_name, batch, branch, academic_year - admission_year + 1 AS year_of_study, registered_at
+  FROM people ORDER BY registered_at;
+```
+
 ---
 
 ## Routing and app flow
@@ -250,9 +297,11 @@ Key routes in the app include:
 
 - `/` — landing / sign-in page
 - `/onboarding` — onboarding for new users
-- `/dashboard` — minimal dashboard view
+- `/dashboard` — greeting, Upcoming Contests and Upcoming Sessions
 - `/dashboard/contests` — contest listings
 - `/dashboard/contests/[slug]` — contest detail + registration page
+- `/dashboard/sessions` — session listings
+- `/dashboard/sessions/[slug]` — session detail + registration page
 - `/dashboard/profile` — user profile screen
 
 ### Route protection

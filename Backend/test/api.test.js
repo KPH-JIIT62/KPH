@@ -979,3 +979,215 @@ describe("core team roles in the API", () => {
     for (const route of ["/api/core-team", "/api/users", "/api/roles"]) assert.equal((await call("GET", route, { token: "alice" })).status, 404, route);
   });
 });
+
+describe("sessions and registration", () => {
+  const SLUG = "interview-talks-by-seniors";
+  const BATCHES = { alice: "B10", bob: "F10", fresher: "B1" }; // alice = campus 62, bob = campus 128
+  const me = async (token) => (await (await call("GET", "/api/users/me", { token })).json()).user;
+  const finishProfile = (token) => call("PUT", "/api/users/me/profile", { token, body: { batch: BATCHES[token] } });
+  const register = (token, body = {}, slug = SLUG) => call("POST", `/api/sessions/${slug}/registrations`, { token, body });
+  const registrations = async () => (await pool.query("SELECT * FROM session_registrations")).rows;
+  const restoreSession = () => pool.query("UPDATE sessions SET registration_status = 'OPEN', registration_closes_at = NULL WHERE slug = $1", [SLUG]);
+
+  test("everything requires login", async () => {
+    assert.equal((await call("GET", "/api/sessions")).status, 401);
+    assert.equal((await call("GET", `/api/sessions/${SLUG}`)).status, 401);
+    assert.equal((await call("POST", `/api/sessions/${SLUG}/registrations`, { body: {} })).status, 401);
+  });
+  test("the list has Interview Talks by Seniors: 27 Oct 2026, 17:00-18:30 IST, LT3, open, not yet registered", async () => {
+    const { sessions } = await (await call("GET", "/api/sessions", { token: "alice" })).json();
+    const talk = sessions.find((s) => s.slug === SLUG);
+    assert.equal(talk.title, "Interview Talks by Seniors");
+    assert.equal(talk.venue, "LT3");
+    assert.equal(new Date(talk.startsAt).toISOString(), "2026-10-27T11:30:00.000Z"); // 17:00 in India
+    assert.equal(new Date(talk.endsAt).toISOString(), "2026-10-27T13:00:00.000Z"); // 18:30 in India
+    assert.equal(talk.registrationStatus, "OPEN");
+    assert.equal(talk.registrationOpen, true);
+    assert.equal(talk.registrationClosesAt, null);
+    assert.equal(talk.registration, null);
+  });
+  test("the session page data carries the same schedule and status", async () => {
+    const { session, registration } = await (await call("GET", `/api/sessions/${SLUG}`, { token: "alice" })).json();
+    assert.equal(session.venue, "LT3");
+    assert.equal(session.registrationStatus, "OPEN");
+    assert.equal(registration, null);
+  });
+  test("unknown session -> 404, also for slugs that cannot exist", async () => {
+    assert.equal((await call("GET", "/api/sessions/nope", { token: "alice" })).status, 404);
+    assert.equal((await call("GET", "/api/sessions/NOT%20A%20SLUG!", { token: "alice" })).status, 404);
+    await finishProfile("alice");
+    const res = await register("alice", {}, "nope");
+    assert.equal(res.status, 404);
+    assert.equal((await res.json()).error.code, "SESSION_NOT_FOUND");
+  });
+  test("registering before the profile is complete -> 409 and nothing is saved", async () => {
+    const res = await register("alice");
+    assert.equal(res.status, 409);
+    assert.equal((await res.json()).error.code, "PROFILE_INCOMPLETE");
+    assert.equal((await registrations()).length, 0);
+  });
+  test("a good registration needs NO body, is saved, and shows up on the list and the page", async () => {
+    await finishProfile("alice");
+    const res = await register("alice", undefined);
+    assert.equal(res.status, 201);
+    const body = await res.json();
+    assert.deepEqual(Object.keys(body), ["registration"]);
+    assert.deepEqual(Object.keys(body.registration).sort(), ["createdAt", "id"]); // nothing about the person is stored on it
+    const { sessions } = await (await call("GET", "/api/sessions", { token: "alice" })).json();
+    assert.equal(sessions.find((s) => s.slug === SLUG).registration.id, body.registration.id);
+    const detail = await (await call("GET", `/api/sessions/${SLUG}`, { token: "alice" })).json();
+    assert.equal(detail.registration.id, body.registration.id);
+    assert.equal((await registrations()).length, 1);
+  });
+  test("the registration columns hold ONLY ids and a time: who registered is read from the profile", async () => {
+    const columns = (await pool.query("SELECT column_name FROM information_schema.columns WHERE table_name = 'session_registrations'")).rows.map((r) => r.column_name).sort();
+    assert.deepEqual(columns, ["created_at", "id", "session_id", "user_id"]);
+  });
+  test("identity and profile details come from the server, never from the request body", async () => {
+    await finishProfile("alice");
+    await finishProfile("bob");
+    const bobId = (await pool.query("SELECT id FROM users WHERE firebase_uid = 'uid-bob'")).rows[0].id;
+    const res = await register("alice", { userId: bobId, user_id: bobId, batch: "Z99", branch: "ECE", enrollmentNo: "1", name: "Mallory", sessionId: "x" });
+    assert.equal(res.status, 201);
+    const rows = await registrations();
+    assert.equal(rows.length, 1);
+    assert.notEqual(rows[0].user_id, bobId);
+    const alice = await me("alice");
+    assert.equal(alice.profile.batch, "B10");
+    assert.equal(alice.profile.branch, "CSE");
+  });
+  test("a client-supplied Year of Study that differs from the profile is refused, and nothing is saved", async () => {
+    await finishProfile("alice"); // 2nd year
+    for (const yearOfStudy of [1, 3, 4, "3", "3rd Year", "third", 99, null, "", {}, [], true]) {
+      const res = await register("alice", { yearOfStudy });
+      assert.equal(res.status, 400, `yearOfStudy ${JSON.stringify(yearOfStudy)}`);
+      const { error } = await res.json();
+      assert.equal(error.code, "VALIDATION_ERROR");
+      assert.ok(error.fields.yearOfStudy);
+    }
+    assert.equal((await registrations()).length, 0);
+  });
+  test("a client-supplied Year of Study that MATCHES the profile is accepted", async () => {
+    await finishProfile("alice");
+    assert.equal((await register("alice", { yearOfStudy: "2nd Year" })).status, 201);
+    await finishProfile("fresher");
+    assert.equal((await register("fresher", { yearOfStudy: 1 })).status, 201);
+  });
+  test("with no valid Year of Study on the profile the registration is refused, with the support address", async () => {
+    await call("GET", "/api/users/me", { token: "legacy" });
+    await pool.query("UPDATE users SET batch = 'B10', branch = 'CSE', profile_completed_at = now() WHERE firebase_uid = 'uid-legacy'");
+    let res = await register("legacy");
+    assert.equal(res.status, 409);
+    let { error } = await res.json();
+    assert.equal(error.code, "YEAR_OF_STUDY_UNAVAILABLE");
+    assert.match(error.message, /kph\.jiit@gmail\.com/);
+    await finishProfile("alice");
+    nowValue = new Date("2029-08-01T12:00:00+05:30"); // alice is past the 4-year programme
+    await restoreSession();
+    await pool.query("UPDATE sessions SET ends_at = '2030-01-01+05:30' WHERE slug = $1", [SLUG]); // keep the session itself open for this check
+    try {
+      res = await register("alice");
+      assert.equal(res.status, 409);
+      ({ error } = await res.json());
+      assert.equal(error.code, "YEAR_OF_STUDY_UNAVAILABLE");
+    } finally {
+      await pool.query("UPDATE sessions SET ends_at = '2026-10-27 18:30+05:30' WHERE slug = $1", [SLUG]);
+    }
+    assert.equal((await registrations()).length, 0);
+  });
+  test("everyone is judged by THEIR OWN profile (both campuses register independently)", async () => {
+    await finishProfile("alice");
+    await finishProfile("bob");
+    assert.equal((await register("alice")).status, 201);
+    assert.equal((await register("bob")).status, 201);
+    assert.equal((await registrations()).length, 2);
+  });
+  test("registering twice -> 409 ALREADY_REGISTERED and still exactly one registration", async () => {
+    await finishProfile("alice");
+    assert.equal((await register("alice")).status, 201);
+    const again = await register("alice");
+    assert.equal(again.status, 409);
+    assert.equal((await again.json()).error.code, "ALREADY_REGISTERED");
+    assert.equal((await registrations()).length, 1);
+  });
+  test("10 simultaneous registrations by the same person create exactly one", async () => {
+    await finishProfile("alice");
+    const results = await Promise.all(Array.from({ length: 10 }, () => register("alice")));
+    assert.equal(results.filter((r) => r.status === 201).length, 1);
+    assert.equal(results.filter((r) => r.status === 409).length, 9);
+    assert.equal((await registrations()).length, 1);
+  });
+  test("without its own deadline, registration closes by itself when the session ends (18:30 IST, to the second)", async () => {
+    await finishProfile("alice");
+    await finishProfile("bob");
+    nowValue = new Date("2026-10-27T18:29:59+05:30"); // one second before it ends: still open
+    let { session } = await (await call("GET", `/api/sessions/${SLUG}`, { token: "alice" })).json();
+    assert.equal(session.registrationStatus, "OPEN");
+    assert.equal((await register("alice")).status, 201);
+    nowValue = new Date("2026-10-27T18:30:00+05:30"); // the moment it ends
+    ({ session } = await (await call("GET", `/api/sessions/${SLUG}`, { token: "bob" })).json());
+    assert.equal(session.registrationStatus, "CLOSED");
+    assert.equal(session.registrationOpen, false);
+    const res = await register("bob");
+    assert.equal(res.status, 409);
+    assert.equal((await res.json()).error.code, "REGISTRATION_CLOSED");
+    assert.equal((await registrations()).length, 1);
+  });
+  test("an organizer can close registration earlier with registration_closes_at (to the second)", async () => {
+    await finishProfile("alice");
+    await pool.query("UPDATE sessions SET registration_closes_at = '2026-10-27 17:00:00+05:30' WHERE slug = $1", [SLUG]);
+    try {
+      nowValue = new Date("2026-10-27T16:59:59+05:30");
+      assert.equal((await (await call("GET", `/api/sessions/${SLUG}`, { token: "alice" })).json()).session.registrationStatus, "OPEN");
+      nowValue = new Date("2026-10-27T17:00:00+05:30");
+      const res = await register("alice");
+      assert.equal(res.status, 409);
+      assert.equal((await res.json()).error.code, "REGISTRATION_CLOSED");
+      assert.equal((await (await call("GET", `/api/sessions/${SLUG}`, { token: "alice" })).json()).session.registrationClosesAt !== null, true);
+    } finally {
+      await restoreSession();
+    }
+  });
+  test("the SOON and CLOSED switches work: nobody can register until an organizer opens it", async () => {
+    await finishProfile("alice");
+    try {
+      await pool.query("UPDATE sessions SET registration_status = 'SOON' WHERE slug = $1", [SLUG]);
+      let res = await register("alice");
+      assert.equal(res.status, 409);
+      assert.equal((await res.json()).error.code, "REGISTRATION_NOT_OPEN");
+      assert.equal((await (await call("GET", `/api/sessions/${SLUG}`, { token: "alice" })).json()).session.registrationStatus, "SOON");
+      await pool.query("UPDATE sessions SET registration_status = 'CLOSED' WHERE slug = $1", [SLUG]);
+      res = await register("alice");
+      assert.equal(res.status, 409);
+      assert.equal((await res.json()).error.code, "REGISTRATION_CLOSED");
+      await restoreSession();
+      assert.equal((await register("alice")).status, 201);
+    } finally {
+      await restoreSession();
+    }
+  });
+  test("the database refuses impossible schedules and unknown registration statuses", async () => {
+    await assert.rejects(pool.query("UPDATE sessions SET ends_at = starts_at - interval '1 hour' WHERE slug = $1", [SLUG]), /session_ends_after_it_starts/);
+    await assert.rejects(pool.query("UPDATE sessions SET registration_closes_at = ends_at + interval '1 hour' WHERE slug = $1", [SLUG]), /session_registration_closes_by_the_end/);
+    await assert.rejects(pool.query("UPDATE sessions SET registration_status = 'MAYBE' WHERE slug = $1", [SLUG]), /session_registration_status_valid/);
+  });
+  test("a session and a contest are separate: registering for one does not register for the other", async () => {
+    await finishProfile("alice");
+    assert.equal((await register("alice")).status, 201);
+    const { contests } = await (await call("GET", "/api/contests", { token: "alice" })).json();
+    assert.ok(contests.every((c) => c.registration === null));
+    assert.equal((await call("POST", "/api/contests/encode-26-2/registrations", { token: "alice", body: { hackerrankHandle: "alice_hr" } })).status, 201);
+    assert.equal((await registrations()).length, 1);
+  });
+  test("deleting a user row (as you do to re-test) also removes their session registrations", async () => {
+    await finishProfile("alice");
+    assert.equal((await register("alice")).status, 201);
+    await pool.query("DELETE FROM users WHERE firebase_uid = 'uid-alice'");
+    assert.equal((await registrations()).length, 0);
+  });
+  test("a session that has registrations cannot be deleted by accident", async () => {
+    await finishProfile("alice");
+    assert.equal((await register("alice")).status, 201); // proven BEFORE the delete is tried, so a failure here can never delete the seed
+    await assert.rejects(pool.query("DELETE FROM sessions WHERE slug = $1", [SLUG]), /violates foreign key/);
+  });
+});

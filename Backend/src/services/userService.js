@@ -2,7 +2,8 @@
 // Controllers never write SQL and this file never touches req/res, so each can change independently.
 const { HttpError } = require("../utils/HttpError");
 const { enrollmentFromEmail } = require("../utils/enrollment");
-const { describeAcademic, deriveAcademic } = require("../utils/academic");
+const { describeAcademic, deriveAcademic, yearInputMatches } = require("../utils/academic");
+const { SUPPORT_EMAIL } = require("../config/academic");
 const { createCoreTeamService } = require("./coreTeamService");
 
 // The only shape of a user the API ever returns (camelCase, no firebase_uid).
@@ -130,6 +131,22 @@ function createUserService(pool, { now = () => new Date(), coreTeam = createCore
 
   // What we know about a person's campus / Year of Study right now (used by contest registration).
   const academicOf = (row) => describeAcademic(row.enrollment_no, now());
+  // The rule EVERY registration (contests, sessions...) applies to the person registering, in one place.
+  // `me` is their saved user row. Registration is only for people with a finished profile and a valid Year of Study,
+  // and a client may not claim a different Year of Study than the profile's: it is refused, not quietly ignored.
+  function assertProfileReadyToRegister(me, claimedYearOfStudy) {
+    if (!me?.profile_completed_at) throw new HttpError(409, "PROFILE_INCOMPLETE", "Please complete your profile before registering.");
+    const { yearOfStudy, error } = academicOf(me);
+    if (!yearOfStudy) {
+      throw new HttpError(409, "YEAR_OF_STUDY_UNAVAILABLE", error || `We couldn’t work out your Year of Study. Contact ${SUPPORT_EMAIL}.`);
+    }
+    if (claimedYearOfStudy !== undefined && !yearInputMatches(claimedYearOfStudy, yearOfStudy)) {
+      throw new HttpError(400, "VALIDATION_ERROR", "Please fix the highlighted fields.", {
+        yearOfStudy: "Year of Study comes from your profile and can’t be changed here.",
+      });
+    }
+  }
+
   // Core team membership is looked up by the enrollment number in the person's VERIFIED login email, never by the
   // enrollment number stored on the profile: that one can be typed by users whose email has no number, so it proves nothing.
   const coreTeamRoleOf = (row) => coreTeam.roleFor(enrollmentFromEmail(row.email));
@@ -144,7 +161,7 @@ function createUserService(pool, { now = () => new Date(), coreTeam = createCore
     return rows[0];
   }
 
-  return { findOrCreateFromFirebase, prepareProfileUpdate, updateProfile, setHackerrankHandle, academicOf, coreTeamRoleOf, toPublic };
+  return { findOrCreateFromFirebase, prepareProfileUpdate, updateProfile, setHackerrankHandle, academicOf, assertProfileReadyToRegister, coreTeamRoleOf, toPublic };
 }
 
 module.exports = { createUserService, toPublicUser };

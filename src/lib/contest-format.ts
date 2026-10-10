@@ -26,17 +26,17 @@ export function formatContestDate(iso: string | null) {
   return new Date(iso).toLocaleString("en-IN", { timeZone: TIME_ZONE, day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
-// The coloured label on a contest. `tone` picks the colour (.status-pill.is-<tone> in globals.css).
-export function contestBadge(contest: Contest, registered: boolean): { label: string; tone: "done" | "open" | "soon" | "closed" } {
+// The coloured label on a contest or session (anything with a registrationStatus). `tone` picks the colour (.status-pill.is-<tone> in globals.css).
+export function contestBadge(contest: Pick<Contest, "registrationStatus">, registered: boolean): { label: string; tone: "done" | "open" | "soon" | "closed" } {
   if (registered) return { label: "Registered", tone: "done" };
   if (contest.registrationStatus === "SOON") return { label: "Registrations Opening Soon", tone: "soon" };
   if (contest.registrationStatus === "OPEN") return { label: "Registration open", tone: "open" };
   return { label: "Registration closed", tone: "closed" };
 }
 
-// "Upcoming" = has not finished yet (a contest that is on right now counts). If no end time is set we use the start time;
+// "Upcoming" = has not finished yet (a contest or session that is on right now counts). If no end time is set we use the start time;
 // a contest with no dates at all ("Date to be announced") is still to come.
-export function isUpcoming(contest: Contest, now: Date = new Date()) {
+export function isUpcoming(contest: { startsAt: string | null; endsAt: string | null }, now: Date = new Date()) {
   const last = contest.endsAt ?? contest.startsAt;
   return last === null || new Date(last).getTime() > now.getTime();
 }

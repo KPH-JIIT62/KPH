@@ -11,6 +11,9 @@ const { createUsersRouter } = require("./routes/users");
 const { createContestService } = require("./services/contestService");
 const { createContestsController } = require("./controllers/contestsController");
 const { createContestsRouter } = require("./routes/contests");
+const { createSessionService } = require("./services/sessionService");
+const { createSessionsController } = require("./controllers/sessionsController");
+const { createSessionsRouter } = require("./routes/sessions");
 
 // `now` is only for tests: they pass a fixed clock to check the July 20 academic-year rollover.
 function createApp({ env, pool, verifyToken, now }) {
@@ -35,6 +38,9 @@ function createApp({ env, pool, verifyToken, now }) {
   app.use("/api/users", requireLogin, createUsersRouter(createUsersController(userService)));
   const contestService = createContestService(pool, userService, { now });
   app.use("/api/contests", requireLogin, createContestsRouter(createContestsController(contestService, userService)));
+
+  const sessionService = createSessionService(pool, userService, { now });
+  app.use("/api/sessions", requireLogin, createSessionsRouter(createSessionsController(sessionService)));
 
   app.use(notFound);
   app.use(errorHandler);
