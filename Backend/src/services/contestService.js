@@ -3,8 +3,6 @@
 // so either both changes happen or neither does.
 // The person's Year of Study is read from their PROFILE here on the server; it is not stored on the registration.
 const { HttpError } = require("../utils/HttpError");
-const { yearInputMatches } = require("../utils/academic");
-const { SUPPORT_EMAIL } = require("../config/academic");
 const { registrationStatus } = require("../utils/contestStatus");
 
 // `at` is "now". The status is worked out here, on the server, so the browser can never get it wrong.
@@ -68,19 +66,7 @@ function createContestService(pool, userService, { now = () => new Date() } = {}
 
       // The saved profile is the source of truth for who is registering and for their Year of Study.
       const me = (await client.query("SELECT * FROM users WHERE id = $1", [userId])).rows[0];
-      if (!me?.profile_completed_at) throw new HttpError(409, "PROFILE_INCOMPLETE", "Please complete your profile before registering.");
-
-      // Year of Study is worked out from the enrollment number and today's date. Without a valid one we do not register.
-      const { yearOfStudy, error } = userService.academicOf(me);
-      if (!yearOfStudy) {
-        throw new HttpError(409, "YEAR_OF_STUDY_UNAVAILABLE", error || `We couldn’t work out your Year of Study. Contact ${SUPPORT_EMAIL}.`);
-      }
-      // A client has no say in it: if one sends a different Year of Study, refuse instead of quietly ignoring it.
-      if (claimedYearOfStudy !== undefined && !yearInputMatches(claimedYearOfStudy, yearOfStudy)) {
-        throw new HttpError(400, "VALIDATION_ERROR", "Please fix the highlighted fields.", {
-          yearOfStudy: "Year of Study comes from your profile and can’t be changed here.",
-        });
-      }
+      userService.assertProfileReadyToRegister(me, claimedYearOfStudy);
 
       const { rows } = await client.query(
         `INSERT INTO contest_registrations (contest_id, user_id, hackerrank_handle)

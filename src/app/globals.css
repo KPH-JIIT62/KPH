@@ -3555,3 +3555,7 @@ fieldset.profile-field {
 .contest-perks.is-compact { gap: 8px; margin: 2px 0 0; }
 .contest-perks.is-compact .contest-perk { padding: 5px 11px; font-size: 12.5px; }
 .page-heading .contest-perks + .contest-description { margin-top: 16px; }
+
+.dashboard-section + .dashboard-section {
+  margin-top: 40px;
+}
