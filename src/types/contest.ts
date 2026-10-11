@@ -22,6 +22,8 @@ export type Contest = {
   registrationClosesAt: string | null; // null = no deadline set
   registrationStatus: RegistrationStatus;
   registrationOpen: boolean; // same as registrationStatus === "OPEN"
+  withdrawalClosesAt: string | null; // 15 minutes before it starts; null while there is no start time
+  withdrawalOpen: boolean; // can a registered person still withdraw right now? (decided by the server)
 };
 
 export type ContestSummary = Contest & { registration: ContestRegistration | null };

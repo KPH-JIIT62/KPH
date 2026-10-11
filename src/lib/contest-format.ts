@@ -20,6 +20,11 @@ export function formatRegistrationDeadline(closesAt: string) {
   return `Registration closes ${time(closesAt)} on ${day(closesAt)}`;
 }
 
+// "You can withdraw until 13:45 on 24 October 2026"
+export function formatWithdrawalDeadline(closesAt: string) {
+  return `You can withdraw until ${time(closesAt)} on ${day(closesAt)}`;
+}
+
 // A moment such as "Registered on": "24 Oct 2026, 2:15 pm"
 export function formatContestDate(iso: string | null) {
   if (!iso) return "Date to be announced";

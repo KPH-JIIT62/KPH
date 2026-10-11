@@ -5,6 +5,7 @@ function createContestsRouter(controller) {
   router.get("/", controller.list);
   router.get("/:slug", controller.get);
   router.post("/:slug/registrations", controller.register);
+  router.delete("/:slug/registrations/me", controller.withdraw);
   return router;
 }
 

@@ -1191,3 +1191,243 @@ describe("sessions and registration", () => {
     await assert.rejects(pool.query("DELETE FROM sessions WHERE slug = $1", [SLUG]), /violates foreign key/);
   });
 });
+
+describe("display names from both campuses", () => {
+  const { cleanDisplayName } = require("../src/utils/displayName");
+  const NAME = "Abhigya Awasthi";
+  test("the enrollment number is removed however it is attached (campus 62 and campus 128 styles)", () => {
+    const samples = [
+      "ABHIGYA AWASTHI 992501030399", "ABHIGYA AWASTHI (992501030399)", "ABHIGYA AWASTHI [992501030399]",
+      "ABHIGYA AWASTHI <992501030399>", "ABHIGYA AWASTHI - 992501030399", "ABHIGYA AWASTHI_992501030399",
+      "ABHIGYA AWASTHI992501030399", "992501030399 ABHIGYA AWASTHI", "ABHIGYA AWASTHI\u00a0992501030399",
+      "ABHIGYA AWASTHI \u200b992501030399", "Abhigya Awasthi <992501030399@mail.jiit.ac.in>", "ABHIGYA AWASTHI 2501030399",
+    ];
+    for (const sample of samples) assert.equal(cleanDisplayName(sample, "x@y.z"), NAME, JSON.stringify(sample));
+  });
+  test("mixed-case names, initials and short numbers are left alone", () => {
+    assert.equal(cleanDisplayName("Ravi McDonald (992501030399)", "x@y.z"), "Ravi McDonald");
+    assert.equal(cleanDisplayName("A.K. SHARMA (992501030399)", "x@y.z"), "A.K. Sharma");
+    assert.equal(cleanDisplayName("Agent 007", "x@y.z"), "Agent 007");
+  });
+  test("a campus-128 account is stored clean, and an old dirty stored name is repaired on the next request", async () => {
+    TOKENS.b128 = { uid: "uid-b128", email: "992501030399@mail.jiit.ac.in", email_verified: true, name: "ABHIGYA AWASTHI (992501030399)", firebase: google };
+    try {
+      assert.equal((await me("b128")).displayName, NAME);
+      await pool.query("UPDATE users SET display_name = 'ABHIGYA AWASTHI (992501030399)' WHERE firebase_uid = 'uid-b128'"); // as stored by the old cleaner
+      assert.equal((await me("b128")).displayName, NAME); // no re-login, no migration needed
+    } finally {
+      delete TOKENS.b128;
+    }
+  });
+});
+
+describe("withdrawing a registration, and one HackerRank ID everywhere", () => {
+  const SLUG = "encode-26-2"; // starts 24 Oct 2026 14:00 IST, so withdrawing closes at 13:45
+  const BATCHES = { alice: "B10", bob: "F10" };
+  const finishProfile = (token) => call("PUT", "/api/users/me/profile", { token, body: { batch: BATCHES[token] } });
+  const register = (token, hackerrankHandle, slug = SLUG) => call("POST", `/api/contests/${slug}/registrations`, { token, body: { hackerrankHandle } });
+  const withdraw = (token, slug = SLUG) => call("DELETE", `/api/contests/${slug}/registrations/me`, { token });
+  // the batch is sent unchanged so only the HackerRank ID is what changes
+  const setHandle = (token, hackerrankHandle) => call("PUT", "/api/users/me/profile", { token, body: { batch: BATCHES[token], hackerrankHandle } });
+  const at = async (iso, fn) => {
+    nowValue = new Date(iso);
+    try { return await fn(); } finally { nowValue = new Date(DEFAULT_NOW); }
+  };
+  const idOf = async (query, params) => (await pool.query(query, params)).rows[0].id;
+  const addRegistration = async (token, slug, handle) =>
+    pool.query("INSERT INTO contest_registrations (contest_id, user_id, hackerrank_handle) VALUES ($1, $2, $3)", [
+      await idOf("SELECT id FROM contests WHERE slug = $1", [slug]),
+      await idOf("SELECT id FROM users WHERE firebase_uid = $1", [TOKENS[token].uid]),
+      handle,
+    ]);
+  const handleIn = async (token, slug) =>
+    (await pool.query(
+      `SELECT r.hackerrank_handle FROM contest_registrations r JOIN contests c ON c.id = r.contest_id JOIN users u ON u.id = r.user_id
+        WHERE c.slug = $1 AND u.firebase_uid = $2`, [slug, TOKENS[token].uid])).rows[0]?.hackerrank_handle ?? null;
+  const openExecute = () => pool.query("UPDATE contests SET registration_status = 'OPEN' WHERE slug = 'execute-26-4'");
+  const closeExecute = () => pool.query("UPDATE contests SET registration_status = 'SOON' WHERE slug = 'execute-26-4'");
+
+  before(() =>
+    pool.query(`INSERT INTO contests (slug, title, starts_at, ends_at, registration_status) VALUES
+        ('past-test', 'Past Test', '2026-09-01 14:00+05:30', '2026-09-01 16:00+05:30', 'OPEN'),
+        ('live-test', 'Live Test', '2026-10-08 10:00+05:30', '2026-10-08 14:00+05:30', 'OPEN'),
+        ('tba-test',  'TBA Test',  NULL, NULL, 'OPEN')
+      ON CONFLICT (slug) DO NOTHING`));
+  after(async () => {
+    await pool.query("TRUNCATE users CASCADE");
+    await pool.query("DELETE FROM contests WHERE slug IN ('past-test', 'live-test', 'tba-test')");
+  });
+
+  describe("withdrawing", () => {
+    test("needs login, an existing contest and an existing registration", async () => {
+      assert.equal((await call("DELETE", `/api/contests/${SLUG}/registrations/me`)).status, 401);
+      assert.equal((await withdraw("alice", "nope")).status, 404);
+      assert.equal((await withdraw("alice", "NOT%20A%20SLUG!")).status, 404);
+      await finishProfile("alice");
+      const none = await withdraw("alice");
+      assert.equal(none.status, 404);
+      assert.equal((await none.json()).error.code, "NOT_REGISTERED");
+    });
+    test("a registered person can withdraw, keeps their HackerRank ID on the profile, and can register again", async () => {
+      await finishProfile("alice");
+      await register("alice", "alice_hr");
+      const res = await withdraw("alice");
+      assert.equal(res.status, 200);
+      assert.deepEqual(await res.json(), { withdrawn: true });
+      assert.equal(await handleIn("alice", SLUG), null);
+      assert.equal((await me("alice")).profile.hackerrankHandle, "alice_hr");
+      const { contests } = await (await call("GET", "/api/contests", { token: "alice" })).json();
+      assert.equal(contests.find((c) => c.slug === SLUG).registration, null);
+      assert.equal((await register("alice", "alice_hr")).status, 201); // registration is still open
+      assert.equal((await withdraw("alice")).status, 200);
+      assert.equal((await withdraw("alice")).status, 404); // twice: nothing left to withdraw
+    });
+    test("the contest data says when withdrawing closes: 15 minutes before it starts", async () => {
+      const { contests } = await (await call("GET", "/api/contests", { token: "alice" })).json();
+      const encode = contests.find((c) => c.slug === SLUG);
+      assert.deepEqual([encode.startsAt, encode.withdrawalClosesAt, encode.withdrawalOpen], ["2026-10-24T08:30:00.000Z", "2026-10-24T08:15:00.000Z", true]);
+      assert.equal(contests.find((c) => c.slug === "execute-26-4").withdrawalClosesAt, "2026-10-31T08:15:00.000Z");
+    });
+    test("withdrawing is allowed up to 13:45 on the day, and refused from 13:45:00, to the second", async () => {
+      await finishProfile("alice");
+      await finishProfile("bob");
+      await register("alice", "alice_hr");
+      await register("bob", "bob_hr");
+      await at("2026-10-24T13:44:59+05:30", async () => {
+        const detail = await (await call("GET", `/api/contests/${SLUG}`, { token: "alice" })).json();
+        assert.equal(detail.contest.withdrawalOpen, true);
+        assert.equal((await withdraw("alice")).status, 200);
+      });
+      await at("2026-10-24T13:45:00+05:30", async () => {
+        const detail = await (await call("GET", `/api/contests/${SLUG}`, { token: "bob" })).json();
+        assert.equal(detail.contest.withdrawalOpen, false);
+        const late = await withdraw("bob");
+        assert.equal(late.status, 409);
+        assert.equal((await late.json()).error.code, "WITHDRAWAL_CLOSED");
+      });
+      assert.equal(await handleIn("bob", SLUG), "bob_hr"); // the refused withdrawal changed nothing
+      await at("2026-10-24T14:30:00+05:30", async () => assert.equal((await withdraw("bob")).status, 409)); // contest already running
+    });
+    test("only your own registration is removed", async () => {
+      await finishProfile("alice");
+      await finishProfile("bob");
+      await register("alice", "alice_hr");
+      await register("bob", "bob_hr");
+      assert.equal((await withdraw("alice")).status, 200);
+      assert.equal(await handleIn("bob", SLUG), "bob_hr");
+    });
+    test("withdrawing does not depend on registration still being open", async () => {
+      await finishProfile("alice");
+      await register("alice", "alice_hr");
+      await pool.query("UPDATE contests SET registration_status = 'CLOSED' WHERE slug = $1", [SLUG]);
+      try {
+        assert.equal((await withdraw("alice")).status, 200);
+        const again = await register("alice", "alice_hr");
+        assert.equal(again.status, 409); // ...but they cannot get back in once registration is closed
+        assert.equal((await again.json()).error.code, "REGISTRATION_CLOSED");
+      } finally {
+        await pool.query("UPDATE contests SET registration_status = 'OPEN' WHERE slug = $1", [SLUG]);
+      }
+    });
+    test("a contest with no start time yet can be withdrawn from at any time", async () => {
+      await finishProfile("alice");
+      await register("alice", "alice_hr");
+      await addRegistration("alice", "tba-test", "alice_hr");
+      const { contests } = await (await call("GET", "/api/contests", { token: "alice" })).json();
+      const tba = contests.find((c) => c.slug === "tba-test");
+      assert.deepEqual([tba.withdrawalClosesAt, tba.withdrawalOpen], [null, true]);
+      assert.equal((await withdraw("alice", "tba-test")).status, 200);
+    });
+  });
+
+  describe("one HackerRank ID everywhere", () => {
+    test("changing it in the profile updates every upcoming registration", async () => {
+      await finishProfile("alice");
+      await register("alice", "old_hr");
+      await openExecute();
+      try {
+        await register("alice", "old_hr", "execute-26-4");
+        const res = await setHandle("alice", "new_hr");
+        assert.equal(res.status, 200);
+        assert.equal((await res.json()).user.profile.hackerrankHandle, "new_hr");
+        assert.equal(await handleIn("alice", SLUG), "new_hr");
+        assert.equal(await handleIn("alice", "execute-26-4"), "new_hr");
+        const { contests } = await (await call("GET", "/api/contests", { token: "alice" })).json();
+        assert.deepEqual(contests.filter((c) => c.registration).map((c) => c.registration.hackerrankHandle), ["new_hr", "new_hr"]);
+      } finally {
+        await closeExecute();
+      }
+    });
+    test("contests that already started or finished keep the ID used then; a contest without a date yet is updated", async () => {
+      await finishProfile("alice");
+      await register("alice", "old_hr");
+      for (const slug of ["past-test", "live-test", "tba-test"]) await addRegistration("alice", slug, "old_hr");
+      await setHandle("alice", "new_hr");
+      assert.equal(await handleIn("alice", SLUG), "new_hr"); // upcoming
+      assert.equal(await handleIn("alice", "tba-test"), "new_hr"); // no date yet counts as upcoming
+      assert.equal(await handleIn("alice", "past-test"), "old_hr"); // finished
+      assert.equal(await handleIn("alice", "live-test"), "old_hr"); // already started
+    });
+    test("other people's registrations are not touched", async () => {
+      await finishProfile("alice");
+      await finishProfile("bob");
+      await register("alice", "old_hr");
+      await register("bob", "bob_hr");
+      await setHandle("alice", "new_hr");
+      assert.equal(await handleIn("bob", SLUG), "bob_hr");
+    });
+    test("saving the same ID, or a profile that does not mention it, changes nothing", async () => {
+      await finishProfile("alice");
+      await register("alice", "old_hr");
+      assert.equal((await setHandle("alice", "old_hr")).status, 200);
+      const other = await call("PUT", "/api/users/me/profile", { token: "alice", body: { batch: "B10", codeforcesHandle: "alice_cf" } });
+      assert.equal(other.status, 200);
+      assert.equal(await handleIn("alice", SLUG), "old_hr");
+      assert.equal((await me("alice")).profile.hackerrankHandle, "old_hr");
+    });
+    test("an invalid new ID is refused and nothing changes", async () => {
+      await finishProfile("alice");
+      await register("alice", "old_hr");
+      assert.equal((await setHandle("alice", "bad id!")).status, 400);
+      assert.equal(await handleIn("alice", SLUG), "old_hr");
+      assert.equal((await me("alice")).profile.hackerrankHandle, "old_hr");
+    });
+    test("registering for a second contest with a different ID updates the first registration too", async () => {
+      await finishProfile("alice");
+      await register("alice", "first_hr");
+      await openExecute();
+      try {
+        assert.equal((await register("alice", "second_hr", "execute-26-4")).status, 201);
+        assert.equal((await me("alice")).profile.hackerrankHandle, "second_hr");
+        assert.equal(await handleIn("alice", SLUG), "second_hr");
+      } finally {
+        await closeExecute();
+      }
+    });
+    test("the ID cannot be cleared while registered for an upcoming contest, and nothing changes", async () => {
+      await finishProfile("alice");
+      await register("alice", "old_hr");
+      const res = await setHandle("alice", "");
+      assert.equal(res.status, 409);
+      const { error } = await res.json();
+      assert.equal(error.code, "HACKERRANK_ID_IN_USE");
+      assert.match(error.fields.hackerrankHandle, /Encode 26\.2/);
+      assert.equal((await me("alice")).profile.hackerrankHandle, "old_hr");
+      assert.equal(await handleIn("alice", SLUG), "old_hr");
+    });
+    test("it can be cleared once the person has withdrawn, or when the only registrations are for contests already started", async () => {
+      await finishProfile("alice");
+      await register("alice", "old_hr");
+      await withdraw("alice");
+      assert.equal((await setHandle("alice", "")).status, 200);
+      assert.equal((await me("alice")).profile.hackerrankHandle, null);
+
+      await finishProfile("bob");
+      await setHandle("bob", "bob_hr");
+      await addRegistration("bob", "past-test", "bob_hr");
+      await addRegistration("bob", "live-test", "bob_hr");
+      assert.equal((await setHandle("bob", "")).status, 200);
+      assert.equal(await handleIn("bob", "past-test"), "bob_hr"); // history is kept
+    });
+  });
+});

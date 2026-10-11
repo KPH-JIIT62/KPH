@@ -84,28 +84,79 @@ function createUserService(pool, { now = () => new Date(), coreTeam = createCore
     hackerrankHandle: "hackerrank_handle",
   };
 
+  // Runs `work` as one all-or-nothing database transaction. If `db` is already a checked-out client, the caller
+  // owns the transaction (for example contest registration) and we simply join it.
+  async function inTransaction(db, work) {
+    if (typeof db.release === "function") return work(db);
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const result = await work(client);
+      await client.query("COMMIT");
+      return result;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  // A person has ONE HackerRank ID. When it changes, every contest registration that has not started yet is updated to
+  // match, so organizers always see the ID the person uses now. Contests that already started (or finished) keep the ID
+  // the person registered with, because that is what really happened. A contest with no start date yet counts as upcoming.
+  async function syncUpcomingRegistrations(userId, handle, db) {
+    const at = now();
+    if (handle === null) {
+      // A registration cannot exist without an ID, so the ID cannot be cleared while an upcoming registration needs it.
+      const { rows } = await db.query(
+        `SELECT c.title FROM contest_registrations r JOIN contests c ON c.id = r.contest_id
+          WHERE r.user_id = $1 AND (c.starts_at IS NULL OR c.starts_at > $2) ORDER BY c.starts_at NULLS LAST`,
+        [userId, at],
+      );
+      if (rows.length) {
+        const message = `You’re registered for ${rows.map((r) => r.title).join(" and ")}, which needs a HackerRank ID. Change it instead of clearing it, or withdraw your registration first.`;
+        throw new HttpError(409, "HACKERRANK_ID_IN_USE", message, { hackerrankHandle: message });
+      }
+      return;
+    }
+    await db.query(
+      `UPDATE contest_registrations r SET hackerrank_handle = $2
+         FROM contests c
+        WHERE c.id = r.contest_id AND r.user_id = $1
+          AND (c.starts_at IS NULL OR c.starts_at > $3)
+          AND r.hackerrank_handle IS DISTINCT FROM $2`,
+      [userId, handle, at],
+    );
+  }
+
   // Updates only the fields present in `profile` (undefined = leave as it is, null = clear).
   // `db` can be a transaction client, so other services can run this inside their own transaction.
   async function updateProfile(userId, profile, db = pool) {
-    const params = [userId, profile.enrollmentNo ?? null];
-    const sets = ["enrollment_no = COALESCE(enrollment_no, $2)"]; // once known, the enrollment number never changes
-    for (const [key, column] of Object.entries(PROFILE_COLUMNS)) {
-      if (profile[key] === undefined) continue;
-      params.push(profile[key]);
-      sets.push(`${column} = $${params.length}`);
-    }
-    sets.push("profile_completed_at = COALESCE(profile_completed_at, now())", "updated_at = now()");
-    try {
-      const { rows } = await db.query(`UPDATE users SET ${sets.join(", ")} WHERE id = $1 RETURNING *`, params);
-      return rows[0];
-    } catch (error) {
-      if (error.code === "23505" && error.constraint === "users_enrollment_no_key") {
-        throw new HttpError(409, "ENROLLMENT_TAKEN", "This enrollment number is already linked to another account.", {
-          enrollmentNo: "Already linked to another account.",
-        });
+    return inTransaction(db, async (tx) => {
+      const params = [userId, profile.enrollmentNo ?? null];
+      const sets = ["enrollment_no = COALESCE(enrollment_no, $2)"]; // once known, the enrollment number never changes
+      for (const [key, column] of Object.entries(PROFILE_COLUMNS)) {
+        if (profile[key] === undefined) continue;
+        params.push(profile[key]);
+        sets.push(`${column} = $${params.length}`);
       }
-      throw error;
-    }
+      sets.push("profile_completed_at = COALESCE(profile_completed_at, now())", "updated_at = now()");
+      let row;
+      try {
+        row = (await tx.query(`UPDATE users SET ${sets.join(", ")} WHERE id = $1 RETURNING *`, params)).rows[0];
+      } catch (error) {
+        if (error.code === "23505" && error.constraint === "users_enrollment_no_key") {
+          throw new HttpError(409, "ENROLLMENT_TAKEN", "This enrollment number is already linked to another account.", {
+            enrollmentNo: "Already linked to another account.",
+          });
+        }
+        throw error;
+      }
+      // Same transaction: either the profile AND the registrations change, or neither does.
+      if (profile.hackerrankHandle !== undefined) await syncUpcomingRegistrations(userId, row.hackerrank_handle, tx);
+      return row;
+    });
   }
 
   // Branch is NEVER taken from the client. This turns the validated form values into what may actually be saved:
@@ -154,11 +205,14 @@ function createUserService(pool, { now = () => new Date(), coreTeam = createCore
 
   // Used when someone registers for a contest: their HackerRank ID is also saved to their profile.
   async function setHackerrankHandle(userId, handle, db = pool) {
-    const { rows } = await db.query(
-      "UPDATE users SET hackerrank_handle = $2, updated_at = now() WHERE id = $1 RETURNING *",
-      [userId, handle],
-    );
-    return rows[0];
+    return inTransaction(db, async (tx) => {
+      const { rows } = await tx.query(
+        "UPDATE users SET hackerrank_handle = $2, updated_at = now() WHERE id = $1 RETURNING *",
+        [userId, handle],
+      );
+      await syncUpcomingRegistrations(userId, handle, tx); // registering with a new ID updates the other upcoming registrations too
+      return rows[0];
+    });
   }
 
   return { findOrCreateFromFirebase, prepareProfileUpdate, updateProfile, setHackerrankHandle, academicOf, assertProfileReadyToRegister, coreTeamRoleOf, toPublic };

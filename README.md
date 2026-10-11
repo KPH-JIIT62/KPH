@@ -182,6 +182,7 @@ All rules are data in **one file: `Backend/src/config/academic.js`** (campuses a
 - the application does not trust profile values sent by the browser for sensitive fields
 - the backend reads or preserves values it already knows and validates the rest
 - `enrollment_no` is kept once known and cannot be reused by a different account
+- the stored display name is cleaned on every sign-in (`Backend/src/utils/displayName.js`): Google adds the enrollment number to college accounts, attached in different ways on different campuses (`NAME 992501030399`, `NAME (992501030399)`, `NAME <992501030399>`, `NAME - 992501030399`, `NAME992501030399`, ...). Any run of 5 or more digits is removed together with the brackets or separators around it, so the name shows as `Name` on every campus. A name that is stored wrongly repairs itself the next time that person opens the site.
 
 ---
 
@@ -224,6 +225,27 @@ DELETE FROM contest_registrations WHERE user_id = (SELECT id FROM users WHERE en
 
 The old `registration_open` on/off column was replaced by `registration_status` in migration 007 (existing values were carried over).
 
+### Withdrawing a registration
+
+A registered person can withdraw until **15 minutes before the contest starts** (for Encode 26.2, 14:00 start: until 13:45 on 24 October 2026). The rule lives in `Backend/src/utils/contestStatus.js` (`WITHDRAWAL_CUTOFF_MINUTES`).
+
+- the server decides, to the second, using the contest's `starts_at`; the contest data carries `withdrawalClosesAt` and `withdrawalOpen`, so the browser only displays it
+- after the cutoff the API answers `409 WITHDRAWAL_CLOSED`; asking to withdraw when not registered answers `404 NOT_REGISTERED`
+- withdrawing deletes the registration row, so the person can register again while registration is still open (if registration has closed they cannot get back in)
+- withdrawing does not depend on registration still being open: someone who registered can always step back, as long as it is early enough
+- the person's HackerRank ID stays on their profile
+- a contest with no start time yet can be withdrawn from at any time
+
+### One HackerRank ID everywhere
+
+A person has one HackerRank ID. When it changes (in the profile, or by registering for another contest with a different ID), every registration for a contest that **has not started yet** is updated to match, in the same database transaction as the profile change, so either all of it changes or none of it does.
+
+- contests that already started or finished keep the ID the person registered with, because that is what happened
+- a contest with no start date yet counts as upcoming
+- other people's registrations are never touched
+- the ID cannot be cleared while the person is registered for an upcoming contest (`409 HACKERRANK_ID_IN_USE`): a registration needs an ID. They can change it, or withdraw first
+- the code is `syncUpcomingRegistrations` in `Backend/src/services/userService.js`
+
 ### Contest API
 
 The backend exposes these authenticated routes:
@@ -231,6 +253,7 @@ The backend exposes these authenticated routes:
 - `GET /api/contests` — list visible contests for the current user
 - `GET /api/contests/:slug` — fetch contest details and registration state
 - `POST /api/contests/:slug/registrations` — register the current user for a contest
+- `DELETE /api/contests/:slug/registrations/me` — withdraw the current user's own registration (until 15 minutes before the start)
 
 The registration validation stores only:
 
