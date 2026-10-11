@@ -12,11 +12,11 @@ import type { ProfileDetails, ProfileInput } from "@/types/account";
 // The backend is the single source of truth for the rules; this form just shows its error messages.
 // The person types only their BATCH. Campus, branch and Year of Study are detected by the server from the enrollment
 // number (+ batch) and shown read-only: there is no way to edit them here, and the request never contains them.
-const HANDLE_FIELDS: { name: keyof ProfileInput; platform: Platform; label: string; placeholder: string }[] = [
+const HANDLE_FIELDS: { name: keyof ProfileInput; platform: Platform; label: string; placeholder: string; hint?: string }[] = [
   { name: "codeforcesHandle", platform: "codeforces", label: "Codeforces handle", placeholder: "Type your Codeforces Handle" },
   { name: "leetcodeHandle", platform: "leetcode", label: "LeetCode username", placeholder: "Type your LeetCode Username" },
   { name: "codechefHandle", platform: "codechef", label: "CodeChef username", placeholder: "Type your CodeChef Username" },
-  { name: "hackerrankHandle", platform: "hackerrank", label: "HackerRank username", placeholder: "Type your HackerRank Username" },
+  { name: "hackerrankHandle", platform: "hackerrank", label: "HackerRank username", placeholder: "Type your HackerRank Username", hint: "If you’re registered for an upcoming contest, it will use this ID too." },
 ];
 
 export function ProfileDetailsForm({
@@ -170,6 +170,7 @@ export function ProfileDetailsForm({
             {f.label}
           </span>,
           f.placeholder,
+          f.hint ? { hint: f.hint } : undefined,
         ),
       )}
         </>

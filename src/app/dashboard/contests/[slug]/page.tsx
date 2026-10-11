@@ -7,6 +7,7 @@ import { ArrowLeft, CalendarClock, Check, Hourglass, MapPin } from "lucide-react
 import { useAccount } from "@/components/account-provider";
 import { ContestHighlights } from "@/components/contests/contest-highlights";
 import { ContestRegistrationForm, type RegistrationValues } from "@/components/contests/contest-registration-form";
+import { WithdrawRegistration } from "@/components/contests/withdraw-registration";
 import { ApiError } from "@/lib/api";
 import { useApi } from "@/lib/use-api";
 import { formatContestDate, formatContestWhen, formatRegistrationDeadline } from "@/lib/contest-format";
@@ -40,6 +41,14 @@ export default function ContestPage() {
       cancelled = true;
     };
   }, [api, slug, attempt]);
+
+  // Takes the person out of this contest. The server decides whether it is still early enough; if it is not, the error
+  // message it sends is shown by the confirmation panel. On success the page falls back to the registration form
+  // (or the "opening soon" / "closed" panel), depending on whether registration is still open.
+  async function withdraw() {
+    await api<{ withdrawn: boolean }>(`/api/contests/${encodeURIComponent(slug)}/registrations/me`, { method: "DELETE" });
+    setState((current) => (current.detail ? { ...current, detail: { ...current.detail, registration: null } } : current));
+  }
 
   async function register(values: RegistrationValues) {
     const result = await api<{ registration: ContestRegistration; user: Account }>(`/api/contests/${encodeURIComponent(slug)}/registrations`, {
@@ -122,6 +131,7 @@ export default function ContestPage() {
             <dt>Registered on</dt>
             <dd>{formatContestDate(registration.createdAt)}</dd>
           </dl>
+          <WithdrawRegistration contest={contest} onWithdraw={withdraw} />
         </div>
       ) : contest.registrationStatus === "SOON" ? (
         <div className="profile-panel">

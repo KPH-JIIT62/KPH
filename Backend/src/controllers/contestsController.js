@@ -26,6 +26,11 @@ function createContestsController(contestService, userService) {
       const { registration, user } = await contestService.register(req.user.id, slug, result.value);
       res.status(201).json({ registration, user: await userService.toPublic(user) });
     },
+    // DELETE /api/contests/:slug/registrations/me   (the signed-in person withdraws THEIR OWN registration)
+    async withdraw(req, res) {
+      await contestService.withdraw(req.user.id, slugOf(req));
+      res.json({ withdrawn: true });
+    },
   };
 }
 

@@ -3,7 +3,7 @@
 // so either both changes happen or neither does.
 // The person's Year of Study is read from their PROFILE here on the server; it is not stored on the registration.
 const { HttpError } = require("../utils/HttpError");
-const { registrationStatus } = require("../utils/contestStatus");
+const { registrationStatus, withdrawalDeadline, withdrawalOpen, WITHDRAWAL_CUTOFF_MINUTES } = require("../utils/contestStatus");
 
 // `at` is "now". The status is worked out here, on the server, so the browser can never get it wrong.
 const toPublicContest = (row, at) => {
@@ -21,6 +21,8 @@ const toPublicContest = (row, at) => {
     registrationClosesAt: row.registration_closes_at,
     registrationStatus: status, // "SOON" | "OPEN" | "CLOSED"
     registrationOpen: status === "OPEN",
+    withdrawalClosesAt: withdrawalDeadline(row), // 15 minutes before it starts; null while there is no start time
+    withdrawalOpen: withdrawalOpen(row, at), // can a registered person still withdraw right now?
   };
 };
 const toPublicRegistration = (row) => ({
@@ -87,7 +89,20 @@ function createContestService(pool, userService, { now = () => new Date() } = {}
     }
   }
 
-  return { listForUser, getForUser, register };
+  // Takes the signed-in person OUT of a contest. The registration row is deleted, so they can register again later
+  // (while registration is still open). Their HackerRank ID stays on their profile.
+  async function withdraw(userId, slug) {
+    const contest = (await pool.query("SELECT * FROM contests WHERE slug = $1", [slug])).rows[0];
+    if (!contest) throw new HttpError(404, "CONTEST_NOT_FOUND", "Contest not found.");
+    const mine = (await pool.query("SELECT id FROM contest_registrations WHERE contest_id = $1 AND user_id = $2", [contest.id, userId])).rows[0];
+    if (!mine) throw new HttpError(404, "NOT_REGISTERED", "You are not registered for this contest.");
+    if (!withdrawalOpen(contest, now())) {
+      throw new HttpError(409, "WITHDRAWAL_CLOSED", `Registrations can be withdrawn until ${WITHDRAWAL_CUTOFF_MINUTES} minutes before the contest starts, and that time has passed.`);
+    }
+    await pool.query("DELETE FROM contest_registrations WHERE id = $1", [mine.id]);
+  }
+
+  return { listForUser, getForUser, register, withdraw };
 }
 
 module.exports = { createContestService };
