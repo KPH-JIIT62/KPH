@@ -9,8 +9,14 @@
 //   "Name <992501030399@mail.jiit.ac.in>"
 const INVISIBLE = /[\u200B-\u200D\u2060\uFEFF]/g; // zero-width characters that can hide inside a name
 const EMAIL = /[<(\[{]?[^\s<>()\[\]{}]*@[^\s<>()\[\]{}]*[>)\]}]?/g; // an email address, with any brackets around it
-const NUMBER = /[<(\[{]?\s*\d{5,}\s*[>)\]}]?/g; // an enrollment number, with any brackets around it
-const EDGE_JUNK = /^[\s\-–—_|,:;/\\.]+|[\s\-–—_|,:;/\\]+$/g; // separators left dangling at either end ("NAME -")
+
+// Whatever can sit around an enrollment number: spaces, brackets and QUOTE MARKS of every kind.
+// Quote marks matter: campus-128 accounts carry the number with an apostrophe in front (NAME '992501030314), the way a
+// spreadsheet marks "treat this as text". Without removing it, the name would end in a stray apostrophe.
+const QUOTES = "'\"`´‘’‚‛“”„′ʼ";
+const NUMBER = new RegExp(`[\\s<>()\\[\\]{}${QUOTES}]*\\d{5,}[\\s<>()\\[\\]{}${QUOTES}]*`, "g"); // 5+ digits and everything wrapped around them
+// separators and quote marks left dangling at either end ("NAME -", "NAME '"). A dot is kept at the end for initials ("A.K.").
+const EDGE_JUNK = new RegExp(`^[\\s\\-–—_|,:;/\\\\.${QUOTES}]+|[\\s\\-–—_|,:;/\\\\${QUOTES}]+$`, "g");
 
 const titleCase = (text) => text.toLowerCase().replace(/(^|[\s\-'.])(\p{L})/gu, (match, before, letter) => before + letter.toUpperCase());
 
