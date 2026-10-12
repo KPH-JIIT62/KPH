@@ -182,7 +182,7 @@ All rules are data in **one file: `Backend/src/config/academic.js`** (campuses a
 - the application does not trust profile values sent by the browser for sensitive fields
 - the backend reads or preserves values it already knows and validates the rest
 - `enrollment_no` is kept once known and cannot be reused by a different account
-- the stored display name is cleaned on every sign-in (`Backend/src/utils/displayName.js`): Google adds the enrollment number to college accounts, attached in different ways on different campuses (`NAME 992501030399`, `NAME (992501030399)`, `NAME <992501030399>`, `NAME - 992501030399`, `NAME992501030399`, ...). Any run of 5 or more digits is removed together with the brackets or separators around it, so the name shows as `Name` on every campus. A name that is stored wrongly repairs itself the next time that person opens the site.
+- the stored display name is cleaned on every sign-in (`Backend/src/utils/displayName.js`): Google adds the enrollment number to college accounts, attached in different ways on different campuses (`NAME 992501030399`, `NAME (992501030399)`, `NAME <992501030399>`, `NAME - 992501030399`, `NAME992501030399`, and on campus 128 `NAME '992501030399` with an apostrophe in front, the way a spreadsheet marks text, ...). Any run of 5 or more digits is removed together with the brackets, quote marks and separators around it, so the name shows as `Name` on every campus. Apostrophes that belong to a name (`D'Souza`, `O'Neil`) are kept. A name that is stored wrongly repairs itself the next time that person opens the site.
 
 ---
 

@@ -1209,6 +1209,30 @@ describe("display names from both campuses", () => {
     assert.equal(cleanDisplayName("A.K. SHARMA (992501030399)", "x@y.z"), "A.K. Sharma");
     assert.equal(cleanDisplayName("Agent 007", "x@y.z"), "Agent 007");
   });
+  test("a number with a quote mark stuck to it (campus 128 style: NAME '992501030314) leaves no stray apostrophe", () => {
+    const quoted = [
+      "SRAJAN SACHAN '992501030314", "SRAJAN SACHAN '992501030314'", "SRAJAN SACHAN 992501030314'", "SRAJAN SACHAN ' 992501030314",
+      "SRAJAN SACHAN \u2019992501030314", "SRAJAN SACHAN `992501030314`", 'SRAJAN SACHAN "992501030314"', "SRAJAN SACHAN ('992501030314')",
+      "'992501030314 SRAJAN SACHAN", "SRAJAN SACHAN '", // the last one is a name already damaged by the earlier version
+    ];
+    for (const sample of quoted) assert.equal(cleanDisplayName(sample, "x@y.z"), "Srajan Sachan", JSON.stringify(sample));
+  });
+  test("apostrophes that belong to a name are kept", () => {
+    assert.equal(cleanDisplayName("Kabir D'Souza", "x@y.z"), "Kabir D'Souza");
+    assert.equal(cleanDisplayName("MARY O'NEIL 2501030069", "x@y.z"), "Mary O'Neil");
+    assert.equal(cleanDisplayName("D'ARCY '992501030314", "x@y.z"), "D'Arcy");
+  });
+  test("a name already stored with the stray apostrophe is repaired on the next request", async () => {
+    TOKENS.srajan = { uid: "uid-srajan", email: "992501030314@mail.jiit.ac.in", email_verified: true, name: "SRAJAN SACHAN '992501030314", firebase: google };
+    try {
+      assert.equal((await me("srajan")).displayName, "Srajan Sachan");
+      await pool.query("UPDATE users SET display_name = $1 WHERE firebase_uid = 'uid-srajan'", ["Srajan Sachan '"]); // exactly what the student saw
+      assert.equal((await me("srajan")).displayName, "Srajan Sachan"); // no re-login, no migration
+      assert.equal((await pool.query("SELECT display_name FROM users WHERE firebase_uid = 'uid-srajan'")).rows[0].display_name, "Srajan Sachan");
+    } finally {
+      delete TOKENS.srajan;
+    }
+  });
   test("a campus-128 account is stored clean, and an old dirty stored name is repaired on the next request", async () => {
     TOKENS.b128 = { uid: "uid-b128", email: "992501030399@mail.jiit.ac.in", email_verified: true, name: "ABHIGYA AWASTHI (992501030399)", firebase: google };
     try {
