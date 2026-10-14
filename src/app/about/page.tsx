@@ -13,7 +13,6 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { motion } from "motion/react";
-import { SiteHeader } from "@/components/layout/site-header";
 
 const objectives = [
   {
@@ -200,9 +199,7 @@ function EventCard({
 
 export default function AboutPage() {
   return (
-    <div className="min-h-screen">
-      <SiteHeader />
-      <main className="px-6 py-12 md:py-16">
+    <main className="px-6 py-12 md:py-16">
       <motion.div
         className="mx-auto max-w-4xl space-y-12"
         variants={containerVariants}
@@ -420,6 +417,5 @@ export default function AboutPage() {
         </motion.section>
       </motion.div>
     </main>
-    </div>
   );
 }
