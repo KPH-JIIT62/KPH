@@ -129,6 +129,7 @@ const teamMembers: TeamMember[] = [
     quote: "Guiding competitive programming community initiatives",
     nameGradient: THEME_NAME_GRADIENT,
     specialty: "Community & Student Initiatives",
+    linkedin: "https://www.linkedin.com/in/ankita-wadhwa-78797445",
   },
 
   // Senior Advisors
