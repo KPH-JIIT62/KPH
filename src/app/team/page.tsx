@@ -86,7 +86,7 @@ const teamMembers: TeamMember[] = [
   // Faculty Coordinators
   {
     id: "manish-kumar-thakur",
-    name: "Manish Kumar Thakur",
+    name: "Dr. Manish Kumar Thakur",
     role: "Associate Professor",
     category: "faculty",
     image: "/images/team/manish-kumar-thakur.png",
@@ -110,18 +110,22 @@ const teamMembers: TeamMember[] = [
   },
   {
     id: "pratik-srivastava",
-    name: "Pratik Srivastava",
+    name: "Dr. Pratik Srivastava",
     role: "Faculty Coordinator",
     category: "faculty",
+    image: "/images/team/pratik-srivastava.png",
+    objectPosition: "center 20%",
     quote: "Department of Computer Science & IT mentorship council",
     nameGradient: THEME_NAME_GRADIENT,
     specialty: "Systems & Algorithm Guidance",
   },
   {
     id: "ankita-wadhwa",
-    name: "Ankita Wadhwa",
+    name: "Dr. Ankita Wadhwa",
     role: "Faculty Coordinator",
     category: "faculty",
+    image: "/images/team/ankita-wadhwa.png",
+    objectPosition: "center 20%",
     quote: "Guiding competitive programming community initiatives",
     nameGradient: THEME_NAME_GRADIENT,
     specialty: "Community & Student Initiatives",
