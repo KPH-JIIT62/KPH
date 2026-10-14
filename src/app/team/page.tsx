@@ -9,7 +9,6 @@ import {
   Globe,
 } from "lucide-react";
 import { BrandLogo } from "@/components/brand-logo";
-import { SiteHeader } from "@/components/layout/site-header";
 import { useTheme } from "@/components/theme-provider";
 import "./team.css";
 
@@ -611,13 +610,10 @@ export default function TeamPage() {
       {/* Ambient background glow identical to Login and Contact pages */}
       <div className="team-bg-glow" aria-hidden="true" />
 
-      {/* Unified Top Header Navigation */}
-      <SiteHeader />
-
       {/* Cool & Aesthetic "Meet the Team" Hero Section */}
       <header className="team-hero-header">
         <h1 className="team-hero-title">
-          Meet the <span className="team-title-gradient">Team</span>
+          Meet the Team
         </h1>
       </header>
 
