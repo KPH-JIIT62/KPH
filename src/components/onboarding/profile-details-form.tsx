@@ -59,6 +59,10 @@ export function ProfileDetailsForm({
     setErrors({});
     setFormError("");
     setSaved(false);
+    if (!values.batch.trim()) {
+      setErrors({ batch: "Batch is required." });
+      return;
+    }
     // Instant feedback only: the server re-checks all of this and is the one that decides.
     if (mode === "onboarding" && enrollmentLocked) {
       if (academic.yearOfStudy === null) {
@@ -100,6 +104,7 @@ export function ProfileDetailsForm({
           name={name}
           value={values[name]}
           placeholder={placeholder}
+          required={name === "batch"}
           autoComplete="off"
           maxLength={40}
           onChange={(event) => (extra.onChange ? extra.onChange(event.target.value) : setValues({ ...values, [name]: event.target.value }))}
@@ -132,7 +137,13 @@ export function ProfileDetailsForm({
         })
       )}
       <LockedField id="campus" label="Campus" value={academic.campusLabel ?? "—"} hint="Auto-detected from your enrollment number." />
-      {field("batch", "Batch", "e.g. B11", {
+      {field(
+        "batch",
+        <>
+          Batch <span className="required-asterisk">*</span>
+        </>,
+        "e.g. B11",
+        {
         onChange: (batch) => {
           setValues((v) => ({ ...v, batch }));
           setErrors((e) => ({ ...e, batch: "" })); // an old server message no longer applies to what is being typed
