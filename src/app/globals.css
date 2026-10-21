@@ -3566,3 +3566,19 @@ fieldset.profile-field {
 .withdraw-actions { display: flex; flex-wrap: wrap; gap: 10px; }
 .button-danger { background: var(--error); border-color: var(--error); color: #fff; }
 .button-danger:hover:not(:disabled) { filter: brightness(0.92); }
+
+/* Required-field indicator */
+.required-asterisk {
+  color: #dc2626;
+  font-weight: 700;
+  margin-left: 3px;
+}
+
+/* Visible validation errors */
+.form-error {
+  color: #dc2626;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.5;
+  margin-top: 6px;
+}
