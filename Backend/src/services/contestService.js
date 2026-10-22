@@ -85,6 +85,11 @@ function createContestService(pool, userService, { now = () => new Date() } = {}
     if (!c || registrationStatus(c, now()) !== "OPEN") throw new HttpError(409, "REGISTRATION_CLOSED", "Execute 26.4 registration is not open.");
     const { rows } = await pool.query("SELECT id, display_name, enrollment_no, branch, batch FROM users WHERE enrollment_no=$1 AND profile_completed_at IS NOT NULL AND id<>$2", [text, userId]);
     if (!rows[0]) return { found: false };
+    const leader = (await pool.query("SELECT enrollment_no FROM users WHERE id=$1", [userId])).rows[0];
+    const leaderYear = userService.academicOf(leader).yearOfStudy;
+    const memberYear = userService.academicOf(rows[0]).yearOfStudy;
+    if (!leaderYear || !memberYear) throw new HttpError(409, "YEAR_OF_STUDY_UNAVAILABLE", "A team member’s Year of Study could not be verified from their KPH profile.");
+    if (leaderYear !== memberYear) throw new HttpError(409, "INTER_YEAR_TEAM", "All team members must be in the same Year of Study. Inter-year teams are not allowed.");
     return { found: true, member: { id: rows[0].id, name: rows[0].display_name, enrollmentNo: rows[0].enrollment_no, branch: rows[0].branch, batch: rows[0].batch } };
   }
 
@@ -101,8 +106,13 @@ function createContestService(pool, userService, { now = () => new Date() } = {}
       if (required.some((v) => !v)) throw new HttpError(409, "PROFILE_INCOMPLETE", "Complete your name, enrollment number, branch, batch, and Year of Study in your profile before registering.");
       const ids = [userId, ...memberIds];
       if (new Set(ids).size !== ids.length) throw new HttpError(400, "DUPLICATE_MEMBER", "A person can only appear once on the team.");
-      const { rows: users } = await client.query("SELECT id, profile_completed_at FROM users WHERE id = ANY($1::uuid[]) FOR UPDATE", [ids]);
+      const { rows: users } = await client.query("SELECT id, profile_completed_at, enrollment_no FROM users WHERE id = ANY($1::uuid[]) FOR UPDATE", [ids]);
       if (users.length !== ids.length || users.some((u) => !u.profile_completed_at)) throw new HttpError(400, "MEMBER_NOT_FOUND", "Every team member must have a completed KPH account.");
+      const leaderYear = userService.academicOf(me).yearOfStudy;
+      const members = users.filter((u) => u.id !== userId);
+      const memberYears = members.map((u) => userService.academicOf(u).yearOfStudy);
+      if (!leaderYear || memberYears.some((year) => !year)) throw new HttpError(409, "YEAR_OF_STUDY_UNAVAILABLE", "Every team member’s Year of Study must be verifiable from their KPH profile.");
+      if (memberYears.some((year) => year !== leaderYear)) throw new HttpError(409, "INTER_YEAR_TEAM", "All team members must be in the same Year of Study. Inter-year teams are not allowed.");
       const active = await client.query("SELECT 1 FROM contest_team_members tm JOIN contest_teams t ON t.id=tm.team_id WHERE tm.user_id=ANY($1::uuid[]) AND tm.active AND t.contest_id=$2 AND t.status='ACTIVE'", [ids, contest.id]);
       if (active.rowCount) throw new HttpError(409, "MEMBER_ALREADY_REGISTERED", "One or more selected members are already registered for Execute 26.4.");
       const team = (await client.query("INSERT INTO contest_teams(contest_id,team_name,hackerrank_handle,leader_user_id) VALUES($1,$2,$3,$4) RETURNING *", [contest.id, teamName, hackerrankHandle, userId])).rows[0];
@@ -123,8 +133,9 @@ function createContestService(pool, userService, { now = () => new Date() } = {}
       await client.query("BEGIN");
       const c = (await client.query("SELECT id FROM contests WHERE slug=$1", [slug])).rows[0];
       if (!c) throw new HttpError(404, "CONTEST_NOT_FOUND", "Contest not found.");
-      const t = (await client.query("SELECT t.* FROM contest_teams t JOIN contest_team_members tm ON tm.team_id=t.id WHERE t.contest_id=$1 AND tm.user_id=$2 AND tm.active AND t.status='ACTIVE' FOR UPDATE", [c.id,userId])).rows[0];
+      const t = (await client.query("SELECT t.*, tm.role AS member_role FROM contest_teams t JOIN contest_team_members tm ON tm.team_id=t.id WHERE t.contest_id=$1 AND tm.user_id=$2 AND tm.active AND t.status='ACTIVE' FOR UPDATE", [c.id,userId])).rows[0];
       if (!t) throw new HttpError(404, "NOT_REGISTERED", "You are not registered for this contest.");
+      if (t.member_role !== "LEADER") throw new HttpError(403, "TEAM_LEADER_REQUIRED", "Only the team leader can withdraw the Execute 26.4 registration.");
       if (now() >= EXECUTE_WITHDRAWAL_CUTOFF) throw new HttpError(409, "WITHDRAWAL_CLOSED", "The Execute 26.4 withdrawal deadline was 31 October 2026 at 13:45 IST.");
       await client.query("UPDATE contest_teams SET status='WITHDRAWN', withdrawn_at=now() WHERE id=$1", [t.id]);
       await client.query("UPDATE contest_team_members SET active=FALSE WHERE team_id=$1", [t.id]);
