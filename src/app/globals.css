@@ -3292,6 +3292,13 @@ fieldset.profile-field {
   border-top: 1px solid var(--border-subtle);
 }
 
+.contest-card-details {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
 .contest-card-cta {
   display: inline-flex;
   align-items: center;
@@ -3311,6 +3318,7 @@ fieldset.profile-field {
 
 /* On the contest page, each detail (date, venue, deadline) sits on its own line, with the description below. */
 .page-heading .contest-meta { display: flex; }
+.page-heading .contest-registration-open { margin-top: 8px; }
 .page-heading .contest-description {
   max-width: 62ch;
   margin-top: 18px;
@@ -3332,6 +3340,12 @@ fieldset.profile-field {
 .status-pill.is-open {
   background: var(--accent-subtle);
   color: var(--accent-text);
+}
+
+.status-pill.is-mandatory {
+  background: #fee2e2;
+  border: 1px solid #fecaca;
+  color: #991b1b;
 }
 
 .status-pill.is-done {
@@ -3431,6 +3445,8 @@ fieldset.profile-field {
 .status-pill.is-soon { background: var(--mark-sand-background); color: var(--mark-sand-text); }
 .contest-card-footer { flex-wrap: wrap; }
 .contest-deadline { color: var(--accent-text); font-weight: 500; }
+.member-search { display: flex; align-items: center; gap: 8px; }
+.member-search input { flex: 1; min-width: 0; }
 
 /* Role tags (Student / Core Team / Coordinator / Volunteer): same rounded look as .platform-link, smaller */
 .role-chips {

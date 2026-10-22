@@ -12,6 +12,7 @@ function registrationStatus(row, now = new Date()) {
 
 // A registered person may withdraw until this many minutes before the contest starts.
 const WITHDRAWAL_CUTOFF_MINUTES = 15;
+const EXECUTE_WITHDRAWAL_CUTOFF = new Date("2026-10-31T13:45:00+05:30");
 
 // The moment withdrawing stops being possible, or null while the contest has no start time yet.
 function withdrawalDeadline(row) {
@@ -26,4 +27,4 @@ function withdrawalOpen(row, now = new Date()) {
   return deadline === null || now < deadline;
 }
 
-module.exports = { registrationStatus, WITHDRAWAL_CUTOFF_MINUTES, withdrawalDeadline, withdrawalOpen };
+module.exports = { registrationStatus, WITHDRAWAL_CUTOFF_MINUTES, withdrawalDeadline, withdrawalOpen, EXECUTE_WITHDRAWAL_CUTOFF };
