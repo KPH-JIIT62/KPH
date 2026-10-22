@@ -3,6 +3,10 @@ export type ContestRegistration = {
   id: string;
   hackerrankHandle: string;
   createdAt: string;
+  teamName?: string;
+  status?: "ACTIVE" | "WITHDRAWN";
+  role?: "LEADER" | "MEMBER";
+  members?: Array<{ name: string; enrollmentNo: string; branch: string | null; batch: string | null; role: string }>;
 };
 
 // SOON = "Registrations Opening Soon" (not open yet), OPEN = people can register, CLOSED = too late / switched off.
@@ -24,6 +28,7 @@ export type Contest = {
   registrationOpen: boolean; // same as registrationStatus === "OPEN"
   withdrawalClosesAt: string | null; // 15 minutes before it starts; null while there is no start time
   withdrawalOpen: boolean; // can a registered person still withdraw right now? (decided by the server)
+  mandatory?: boolean;
 };
 
 export type ContestSummary = Contest & { registration: ContestRegistration | null };

@@ -1,12 +1,14 @@
 "use client";
 
 import Link from "next/link";
+import { Fragment } from "react";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { ArrowLeft, CalendarClock, Check, Hourglass, MapPin } from "lucide-react";
 import { useAccount } from "@/components/account-provider";
 import { ContestHighlights } from "@/components/contests/contest-highlights";
 import { ContestRegistrationForm, type RegistrationValues } from "@/components/contests/contest-registration-form";
+import { ExecuteTeamRegistrationForm } from "@/components/contests/execute-team-registration-form";
 import { WithdrawRegistration } from "@/components/contests/withdraw-registration";
 import { ApiError } from "@/lib/api";
 import { useApi } from "@/lib/use-api";
@@ -47,7 +49,7 @@ export default function ContestPage() {
   // (or the "opening soon" / "closed" panel), depending on whether registration is still open.
   async function withdraw() {
     await api<{ withdrawn: boolean }>(`/api/contests/${encodeURIComponent(slug)}/registrations/me`, { method: "DELETE" });
-    setState((current) => (current.detail ? { ...current, detail: { ...current.detail, registration: null } } : current));
+    retry();
   }
 
   async function register(values: RegistrationValues) {
@@ -57,6 +59,11 @@ export default function ContestPage() {
     });
     applyAccount(result.user); // the HackerRank ID was also saved to the profile: show it everywhere without reloading
     setState((current) => (current.detail ? { ...current, detail: { ...current.detail, registration: result.registration } } : current));
+  }
+
+  async function registerTeam(values: { teamName: string; hackerrankHandle: string; memberIds: string[] }) {
+    const result = await api<{ registration: ContestRegistration }>(`/api/contests/${encodeURIComponent(slug)}/teams`, { method: "POST", body: values });
+    setState((current) => current.detail ? { ...current, detail: { ...current.detail, registration: result.registration } } : current);
   }
 
   const back = (
@@ -106,17 +113,21 @@ export default function ContestPage() {
             </p>
           )}
           <ContestHighlights contest={contest} />
+          {contest.registrationStatus === "OPEN" && !registration && <span className="status-pill is-open contest-registration-open">Registration Open</span>}
           {contest.description && <p className="contest-description">{contest.description}</p>}
         </div>
       </section>
 
       {registration ? (
         <div className="profile-panel">
+          {contest.mandatory && <span className="status-pill is-mandatory">MANDATORY</span>}
           <span className="status-pill is-done">
             <Check size={13} aria-hidden="true" /> You’re registered
           </span>
           <dl className="summary-list registered-details">
-            <dt>Name</dt>
+            {registration.teamName && <><dt>Team Name</dt><dd>{registration.teamName}</dd></>}
+            {registration.members?.map((member) => <Fragment key={member.enrollmentNo}><dt>{member.role === "LEADER" ? "Team Leader" : "Team Member"}</dt><dd>{member.name} · {member.enrollmentNo} · {member.batch} · {member.branch}</dd></Fragment>)}
+            {!registration.teamName && <><dt>Name</dt>
             <dd>{account.displayName}</dd>
             <dt>Enrollment number</dt>
             <dd>{account.profile.enrollmentNo}</dd>
@@ -130,6 +141,7 @@ export default function ContestPage() {
             <dd>{registration.hackerrankHandle}</dd>
             <dt>Registered on</dt>
             <dd>{formatContestDate(registration.createdAt)}</dd>
+            </>}
           </dl>
           <WithdrawRegistration contest={contest} onWithdraw={withdraw} />
         </div>
@@ -145,7 +157,8 @@ export default function ContestPage() {
         </div>
       ) : (
         <div className="profile-panel">
-          <ContestRegistrationForm account={account} onSubmit={register} />
+          {contest.mandatory && <span className="status-pill is-mandatory">MANDATORY · Registration required</span>}
+          {slug === "execute-26-4" ? <ExecuteTeamRegistrationForm account={account} onSubmit={registerTeam} /> : <ContestRegistrationForm account={account} onSubmit={register} />}
         </div>
       )}
     </div>
