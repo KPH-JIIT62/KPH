@@ -305,6 +305,46 @@ def send_batch(certificates, smtp_host, smtp_port, smtp_user, smtp_pass, from_em
             subject = f"Certificate - {contest_name}"
             html_body = template_text
 
+        # 0. Try Resend HTTPS API if configured (port 443, never blocked by Render Free Tier)
+        resend_key = os.getenv("RESEND_API_KEY", "").strip()
+        if resend_key:
+            try:
+                import urllib.request
+                resend_payload = {
+                    "from": os.getenv("RESEND_FROM", "Knuth Programming Hub <certificates@resend.dev>"),
+                    "to": [email],
+                    "subject": subject,
+                    "html": html_body,
+                    "attachments": [{
+                        "filename": pdf_path.name,
+                        "content": base64.b64encode(pdf_path.read_bytes()).decode("ascii"),
+                    }],
+                }
+                req = urllib.request.Request(
+                    "https://api.resend.com/emails",
+                    data=json.dumps(resend_payload).encode("utf-8"),
+                    headers={
+                        "Authorization": f"Bearer {resend_key}",
+                        "Content-Type": "application/json",
+                        "User-Agent": "KPH-CertGen/1.0",
+                    },
+                    method="POST",
+                )
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    if resp.status in (200, 201):
+                        mark_sent(pdf_path.name)
+                        results.append({
+                            "name": name,
+                            "email": email,
+                            "status": "SENT",
+                            "filename": pdf_path.name,
+                            "method": "RESEND_HTTPS",
+                        })
+                        log.info("Sent certificate to %s <%s> via Resend HTTPS", name, email)
+                        continue
+            except Exception as resend_err:
+                log.warning("Resend HTTPS dispatch failed for %s: %s", email, resend_err)
+
         # 1. Try Instant SMTP Delivery if configured (1-second dispatch)
         smtp_attempt_error = None
         if has_smtp:
@@ -404,12 +444,12 @@ def send_batch(certificates, smtp_host, smtp_port, smtp_user, smtp_pass, from_em
             outbox_eml = OUTBOX_DIR / f"{safe_prefix}.eml"
             outbox_eml.write_bytes(eml_msg.as_bytes())
 
-            if smtp_attempt_error:
-                dispatch_reason = f"SMTP dispatch failed: {smtp_attempt_error}"
+            if smtp_attempt_error or last_smtp_error:
+                dispatch_reason = f"Render Free cloud firewall blocked SMTP ports 587/465 ({smtp_attempt_error or last_smtp_error}). Dispatch directly from Mac terminal, or add RESEND_API_KEY."
             elif not clean_pass:
                 dispatch_reason = "SMTP password (SMTP_PASS) is not configured in server environment."
             elif not has_gmail_profile:
-                dispatch_reason = "No email sender configured (SMTP credentials missing or ports blocked)."
+                dispatch_reason = "Render cloud firewall blocked SMTP ports 587 & 465. Dispatch directly from your Mac terminal or add RESEND_API_KEY."
             else:
                 dispatch_reason = "Email not delivered. Please log into Gmail using python3 cert_gen/mail_automation/gmail_sender.py --login"
 
