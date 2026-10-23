@@ -26,6 +26,16 @@ function createSessionsController(sessionService) {
       const { registration } = await sessionService.register(req.user.id, slug, { claimedYearOfStudy: body.yearOfStudy });
       res.status(201).json({ registration });
     },
+    // Questions are accepted from any signed-in account, regardless of session registration.
+    async askQuestion(req, res) {
+      const slug = slugOf(req);
+      const input = req.body && typeof req.body === "object" && !Array.isArray(req.body) ? req.body : {};
+      const question = typeof input.question === "string" ? input.question.trim() : "";
+      if (!question) throw new HttpError(400, "QUESTION_REQUIRED", "Write a question before submitting.");
+      if (question.length > 5000) throw new HttpError(400, "QUESTION_TOO_LONG", "Questions must be 5,000 characters or fewer.");
+      const result = await sessionService.askQuestion(req.user.id, slug, question);
+      res.status(201).json({ question: result });
+    },
   };
 }
 

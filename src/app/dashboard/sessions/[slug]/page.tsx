@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ArrowLeft, CalendarClock, Check, Hourglass, MapPin } from "lucide-react";
 import { useAccount } from "@/components/account-provider";
 import { SessionRegistrationForm } from "@/components/sessions/session-registration-form";
+import { SessionQuestionBox } from "@/components/sessions/session-question-box";
 import { ApiError } from "@/lib/api";
 import { useApi } from "@/lib/use-api";
 import { formatContestDate, formatContestWhen, formatRegistrationDeadline } from "@/lib/contest-format";
@@ -95,41 +96,46 @@ export default function SessionPage() {
         </div>
       </section>
 
-      {registration ? (
-        <div className="profile-panel">
-          <span className="status-pill is-done">
-            <Check size={13} aria-hidden="true" /> You’re registered
-          </span>
-          <dl className="summary-list registered-details">
-            <dt>Enrollment number</dt>
-            <dd>{account.profile.enrollmentNo}</dd>
-            <dt>Name</dt>
-            <dd>{account.displayName}</dd>
-            <dt>Batch · Branch</dt>
-            <dd>
-              {account.profile.batch} · {account.profile.branch}
-            </dd>
-            <dt>Year of Study</dt>
-            <dd>{account.profile.academic.yearOfStudyLabel ?? "—"}</dd>
-            <dt>Registered on</dt>
-            <dd>{formatContestDate(registration.createdAt)}</dd>
-          </dl>
+      <div className={slug === "interview-talks-by-seniors" ? "session-detail-columns" : undefined}>
+        <div className={slug === "interview-talks-by-seniors" ? "session-detail-main" : undefined}>
+          {registration ? (
+            <div className="profile-panel">
+              <span className="status-pill is-done">
+                <Check size={13} aria-hidden="true" /> You’re registered
+              </span>
+              <dl className="summary-list registered-details">
+                <dt>Enrollment number</dt>
+                <dd>{account.profile.enrollmentNo}</dd>
+                <dt>Name</dt>
+                <dd>{account.displayName}</dd>
+                <dt>Batch · Branch</dt>
+                <dd>
+                  {account.profile.batch} · {account.profile.branch}
+                </dd>
+                <dt>Year of Study</dt>
+                <dd>{account.profile.academic.yearOfStudyLabel ?? "—"}</dd>
+                <dt>Registered on</dt>
+                <dd>{formatContestDate(registration.createdAt)}</dd>
+              </dl>
+            </div>
+          ) : session.registrationStatus === "SOON" ? (
+            <div className="profile-panel">
+              <span className="status-pill is-soon">Registrations Opening Soon</span>
+              <p className="panel-help">Registration hasn’t opened yet. Check back soon.</p>
+            </div>
+          ) : session.registrationStatus === "CLOSED" ? (
+            <div className="profile-panel">
+              <span className="status-pill is-closed">Registration closed</span>
+              <p className="panel-help">Registration for this session has closed.</p>
+            </div>
+          ) : (
+            <div className="profile-panel">
+              <SessionRegistrationForm account={account} onSubmit={register} />
+            </div>
+          )}
         </div>
-      ) : session.registrationStatus === "SOON" ? (
-        <div className="profile-panel">
-          <span className="status-pill is-soon">Registrations Opening Soon</span>
-          <p className="panel-help">Registration hasn’t opened yet. Check back soon.</p>
-        </div>
-      ) : session.registrationStatus === "CLOSED" ? (
-        <div className="profile-panel">
-          <span className="status-pill is-closed">Registration closed</span>
-          <p className="panel-help">Registration for this session has closed.</p>
-        </div>
-      ) : (
-        <div className="profile-panel">
-          <SessionRegistrationForm account={account} onSubmit={register} />
-        </div>
-      )}
+        {slug === "interview-talks-by-seniors" && <SessionQuestionBox slug={slug} />}
+      </div>
     </div>
   );
 }

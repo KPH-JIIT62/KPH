@@ -79,7 +79,18 @@ function createSessionService(pool, userService, { now = () => new Date() } = {}
     }
   }
 
-  return { listForUser, getForUser, register };
+  // Asking a question is independent of session registration. Identity always comes from the authenticated request.
+  async function askQuestion(userId, slug, question) {
+    const session = (await pool.query("SELECT id FROM sessions WHERE slug = $1", [slug])).rows[0];
+    if (!session) throw new HttpError(404, "SESSION_NOT_FOUND", "Session not found.");
+    const { rows } = await pool.query(
+      "INSERT INTO session_questions (session_id, user_id, question) VALUES ($1, $2, $3) RETURNING id, created_at",
+      [session.id, userId, question],
+    );
+    return { id: rows[0].id, createdAt: rows[0].created_at };
+  }
+
+  return { listForUser, getForUser, register, askQuestion };
 }
 
 module.exports = { createSessionService };

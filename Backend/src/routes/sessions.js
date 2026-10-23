@@ -5,6 +5,7 @@ function createSessionsRouter(controller) {
   router.get("/", controller.list);
   router.get("/:slug", controller.get);
   router.post("/:slug/registrations", controller.register);
+  router.post("/:slug/questions", controller.askQuestion);
   return router;
 }
 
