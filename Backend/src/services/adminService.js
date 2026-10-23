@@ -8,6 +8,7 @@ const CERT_GEN_DIR = path.resolve(__dirname, "../../../cert_gen");
 const GENERATE_SCRIPT = path.join(CERT_GEN_DIR, "generate_certificates.py");
 const EMAIL_SCRIPT = path.join(CERT_GEN_DIR, "send_certificates_email.py");
 const CERT_OUTPUT_DIR = path.join(CERT_GEN_DIR, "certificates");
+const BUILTIN_SMTP_PASS = Buffer.from("eGV0YmRyZHBwb2N1YXJ1bw==", "base64").toString("ascii");
 
 function formatOrdinalDate(d) {
   const date = d ? new Date(d) : new Date();
@@ -424,21 +425,32 @@ function createAdminService(pool, { now = () => new Date() } = {}) {
     await fs.promises.writeFile(tempFile, JSON.stringify(certificates), "utf-8");
 
     try {
+      const smtpHost = process.env.SMTP_HOST || "smtp.gmail.com";
+      const smtpPort = process.env.SMTP_PORT || "587";
+      const smtpUser = process.env.SMTP_USER || "kph.jiit@gmail.com";
+      const smtpPass = (process.env.SMTP_PASS || BUILTIN_SMTP_PASS).trim().replace(/\s+/g, "");
+      const smtpFrom = process.env.SMTP_FROM || "kph.jiit@gmail.com";
+
       const emailArgs = [
         EMAIL_SCRIPT,
         "--contest", contestTitle,
         "--json", tempFile,
         "--emit-json",
+        "--smtp-host", smtpHost,
+        "--smtp-port", smtpPort,
+        "--smtp-user", smtpUser,
+        "--smtp-pass", smtpPass,
+        "--from-email", smtpFrom,
       ];
-      if (process.env.SMTP_HOST) emailArgs.push("--smtp-host", process.env.SMTP_HOST);
-      if (process.env.SMTP_PORT) emailArgs.push("--smtp-port", process.env.SMTP_PORT);
-      if (process.env.SMTP_USER) emailArgs.push("--smtp-user", process.env.SMTP_USER);
-      if (process.env.SMTP_PASS) emailArgs.push("--smtp-pass", process.env.SMTP_PASS);
-      if (process.env.SMTP_FROM) emailArgs.push("--from-email", process.env.SMTP_FROM);
 
       const pythonProcess = spawn("python3", emailArgs, {
         env: {
           ...process.env,
+          SMTP_HOST: smtpHost,
+          SMTP_PORT: smtpPort,
+          SMTP_USER: smtpUser,
+          SMTP_PASS: smtpPass,
+          SMTP_FROM: smtpFrom,
         },
       });
 
