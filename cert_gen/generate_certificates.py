@@ -33,7 +33,6 @@ import re
 import sys
 from pathlib import Path
 
-import openpyxl
 from pypdf import PdfReader, PdfWriter
 from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
@@ -189,6 +188,11 @@ def _cell_text(value) -> str:
 
 def read_entries(excel_path: Path):
     """Return (name, enrollment) pairs from the workbook's active sheet."""
+    try:
+        import openpyxl
+    except ImportError:
+        log.critical("openpyxl is required to parse Excel files. Please install openpyxl or use JSON format.")
+        sys.exit(1)
     wb = openpyxl.load_workbook(excel_path, data_only=True)
     ws = wb.active
 
