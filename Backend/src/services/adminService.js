@@ -31,14 +31,50 @@ function slugify(text) {
 }
 
 function createAdminService(pool, { now = () => new Date() } = {}) {
+  // Automatically self-heal database schema if migrations were not run on production DB
+  let schemaEnsured = false;
+  async function ensureAdminSchema() {
+    if (schemaEnsured) return;
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS admin_access (
+          id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+          identifier  TEXT        NOT NULL UNIQUE,
+          note        TEXT,
+          created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        CREATE INDEX IF NOT EXISTS admin_access_identifier_idx ON admin_access (lower(identifier));
+
+        INSERT INTO admin_access (identifier, note)
+        VALUES ('2501030287@mail.jiit.ac.in', 'Lead Admin - Jayendra Pratap Singh')
+        ON CONFLICT (identifier) DO NOTHING;
+
+        UPDATE users
+           SET role = 'ADMIN'
+         WHERE email = '2501030287@mail.jiit.ac.in'
+            OR enrollment_no = '2501030287';
+
+        ALTER TABLE contests
+          ADD COLUMN IF NOT EXISTS participation_type TEXT NOT NULL DEFAULT 'SOLO',
+          ADD COLUMN IF NOT EXISTS min_team_size INT NOT NULL DEFAULT 1,
+          ADD COLUMN IF NOT EXISTS max_team_size INT NOT NULL DEFAULT 1,
+          ADD COLUMN IF NOT EXISTS hackerrank_required BOOLEAN NOT NULL DEFAULT false,
+          ADD COLUMN IF NOT EXISTS registration_starts_at TIMESTAMPTZ,
+          ADD COLUMN IF NOT EXISTS team_name_required BOOLEAN NOT NULL DEFAULT true;
+
+        ALTER TABLE contest_teams ALTER COLUMN hackerrank_handle DROP NOT NULL;
+      `);
+      schemaEnsured = true;
+    } catch {
+      // ignore if already applied or handled
+    }
+  }
+
   // -------------------------------------------------------------
   // CONTESTS MANAGEMENT
   // -------------------------------------------------------------
   async function listContests() {
-    // Automatically fix schema if column is missing, and fix any contests marked OPEN whose past deadline is causing them to appear closed
-    await pool.query(
-      `ALTER TABLE contests ADD COLUMN IF NOT EXISTS team_name_required BOOLEAN NOT NULL DEFAULT true`
-    ).catch(() => {});
+    await ensureAdminSchema();
 
     await pool.query(
       `UPDATE contests
@@ -432,6 +468,8 @@ function createAdminService(pool, { now = () => new Date() } = {}) {
   }
 
   async function listAdminAccess() {
+    await ensureAdminSchema();
+
     // Ensure Jayendra (permanent admin) always exists in admin_access
     await pool.query(
       `INSERT INTO admin_access (identifier, note)
