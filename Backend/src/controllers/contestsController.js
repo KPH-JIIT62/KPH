@@ -19,23 +19,22 @@ function createContestsController(contestService, userService) {
       res.json(await contestService.getForUser(slugOf(req), req.user.id));
     },
     async searchMember(req, res) {
-      if (slugOf(req) !== "execute-26-4") throw new HttpError(404, "NOT_FOUND", "Not found.");
-      res.json(await contestService.searchMember(req.user.id, req.query.enrollmentNo));
+      const slug = slugOf(req);
+      res.json(await contestService.searchMember(req.user.id, slug, req.query.enrollmentNo));
     },
     async registerTeam(req, res) {
-      if (slugOf(req) !== "execute-26-4") throw new HttpError(404, "NOT_FOUND", "Not found.");
+      const slug = slugOf(req);
       const input = req.body && typeof req.body === "object" && !Array.isArray(req.body) ? req.body : {};
       const teamName = typeof input.teamName === "string" ? input.teamName.trim() : "";
       const hackerrankHandle = typeof input.hackerrankHandle === "string" ? input.hackerrankHandle.trim() : "";
-      const memberIds = input.memberIds;
+      const memberIds = Array.isArray(input.memberIds) ? input.memberIds : [];
       const fields = {};
-      if (!teamName) fields.teamName = "Team name is required.";
-      else if (teamName.length > 80) fields.teamName = "Team name must be 80 characters or fewer.";
-      if (!hackerrankHandle) fields.hackerrankHandle = "Team HackerRank ID is required.";
-      else if (hackerrankHandle.length > 80) fields.hackerrankHandle = "HackerRank ID must be 80 characters or fewer.";
-      if (!Array.isArray(memberIds) || memberIds.length > 2 || memberIds.some((id) => typeof id !== "string" || !/^[0-9a-f-]{36}$/i.test(id))) fields.members = "Choose up to two valid KPH members.";
+      if (teamName && teamName.length > 80) fields.teamName = "Team name must be 80 characters or fewer.";
+      if (hackerrankHandle && hackerrankHandle.length > 80) fields.hackerrankHandle = "HackerRank ID must be 80 characters or fewer.";
+      if (memberIds.some((id) => typeof id !== "string" || !/^[0-9a-f-]{36}$/i.test(id))) fields.members = "Invalid member format.";
+      if (memberIds.length > 5) fields.members = "You can add up to 5 additional members (6 total).";
       if (Object.keys(fields).length) throw new HttpError(400, "VALIDATION_ERROR", "Please fix the highlighted fields.", fields);
-      res.status(201).json({ registration: await contestService.registerTeam(req.user.id, "execute-26-4", { teamName, hackerrankHandle, memberIds }) });
+      res.status(201).json({ registration: await contestService.registerTeam(req.user.id, slug, { teamName, hackerrankHandle, memberIds }) });
     },
     // POST /api/contests/:slug/registrations
     async register(req, res) {

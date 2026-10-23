@@ -14,6 +14,10 @@ const { createContestsRouter } = require("./routes/contests");
 const { createSessionService } = require("./services/sessionService");
 const { createSessionsController } = require("./controllers/sessionsController");
 const { createSessionsRouter } = require("./routes/sessions");
+const { createAdminService } = require("./services/adminService");
+const { createAdminController } = require("./controllers/adminController");
+const { createAdminRouter } = require("./routes/admin");
+const { requireAdmin } = require("./middleware/requireAdmin");
 
 // `now` is only for tests: they pass a fixed clock to check the July 20 academic-year rollover.
 function createApp({ env, pool, verifyToken, now }) {
@@ -30,7 +34,7 @@ function createApp({ env, pool, verifyToken, now }) {
       maxAge: 600,
     }),
   );
-  app.use(express.json({ limit: "10kb" })); // turns JSON bodies into req.body; rejects oversized ones
+  app.use(express.json({ limit: "10mb" })); // turns JSON bodies into req.body; supports leaderboard uploads
 
   app.get("/api/health", (req, res) => res.json({ ok: true, service: "kph-api" })); // public
 
@@ -41,6 +45,9 @@ function createApp({ env, pool, verifyToken, now }) {
 
   const sessionService = createSessionService(pool, userService, { now });
   app.use("/api/sessions", requireLogin, createSessionsRouter(createSessionsController(sessionService)));
+
+  const adminService = createAdminService(pool, { now });
+  app.use("/api/admin", requireLogin, requireAdmin, createAdminRouter(createAdminController(adminService)));
 
   app.use(notFound);
   app.use(errorHandler);

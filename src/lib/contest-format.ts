@@ -12,12 +12,26 @@ export function formatContestWhen(startsAt: string | null, endsAt: string | null
   if (!startsAt) return "Date to be announced";
   if (!endsAt) return `${day(startsAt)} · ${time(startsAt)} IST`;
   if (day(startsAt) === day(endsAt)) return `${day(startsAt)} · ${time(startsAt)} – ${time(endsAt)} IST`;
-  return `${day(startsAt)} ${time(startsAt)} – ${day(endsAt)} ${time(endsAt)} IST`;
+  return `${day(startsAt)} · ${time(startsAt)} – ${day(endsAt)} · ${time(endsAt)} IST`;
 }
 
 // "Registration closes 14:15 on 24 October 2026"
 export function formatRegistrationDeadline(closesAt: string) {
   return `Registration closes ${time(closesAt)} on ${day(closesAt)}`;
+}
+
+export function formatRegistrationWindow(startsAt?: string | null, closesAt?: string | null) {
+  if (!closesAt) return "Registration open";
+  if (!startsAt) return formatRegistrationDeadline(closesAt);
+  if (day(startsAt) === day(closesAt)) {
+    return `Registration: ${day(startsAt)} · ${time(startsAt)} – ${time(closesAt)}`;
+  }
+  return `Registration: ${day(startsAt)} – ${day(closesAt)}`;
+}
+
+export function cleanVenue(venue: string | null | undefined): string | null {
+  if (!venue) return null;
+  return venue.replace(/\s*,\s*/g, ", ").trim();
 }
 
 // "You can withdraw until 13:45 on 24 October 2026"
@@ -35,7 +49,7 @@ export function formatContestDate(iso: string | null) {
 export function contestBadge(contest: Pick<Contest, "registrationStatus">, registered: boolean): { label: string; tone: "done" | "open" | "soon" | "closed" } {
   if (registered) return { label: "Registered", tone: "done" };
   if (contest.registrationStatus === "SOON") return { label: "Registrations Opening Soon", tone: "soon" };
-  if (contest.registrationStatus === "OPEN") return { label: "Registration open", tone: "open" };
+  if (contest.registrationStatus === "OPEN") return { label: "Registration Open", tone: "open" };
   return { label: "Registration closed", tone: "closed" };
 }
 

@@ -22,8 +22,15 @@ function isAllowedEmail(email, allowedDomain) {
 function authenticate({ verifyToken, userService, allowedEmailDomain }) {
   // Express 5 forwards errors thrown from async functions to the error handler automatically.
   return async function authenticateRequest(req, res, next) {
-    const [scheme, token] = (req.get("authorization") || "").split(" ");
-    if (scheme !== "Bearer" || !token) {
+    let token = null;
+    const authHeader = req.get("authorization") || "";
+    if (authHeader.startsWith("Bearer ")) {
+      token = authHeader.slice(7).trim();
+    } else if (req.query && typeof req.query.token === "string" && req.query.token.trim()) {
+      token = req.query.token.trim();
+    }
+
+    if (!token) {
       throw new HttpError(401, "UNAUTHENTICATED", "Sign in required.");
     }
 

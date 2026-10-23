@@ -8,11 +8,11 @@ import { ArrowLeft, CalendarClock, Check, Hourglass, MapPin } from "lucide-react
 import { useAccount } from "@/components/account-provider";
 import { ContestHighlights } from "@/components/contests/contest-highlights";
 import { ContestRegistrationForm, type RegistrationValues } from "@/components/contests/contest-registration-form";
-import { ExecuteTeamRegistrationForm } from "@/components/contests/execute-team-registration-form";
+import { TeamRegistrationForm } from "@/components/contests/team-registration-form";
 import { WithdrawRegistration } from "@/components/contests/withdraw-registration";
 import { ApiError } from "@/lib/api";
 import { useApi } from "@/lib/use-api";
-import { formatContestDate, formatContestWhen, formatRegistrationDeadline } from "@/lib/contest-format";
+import { formatContestDate, formatContestWhen, formatRegistrationDeadline, formatRegistrationWindow, cleanVenue } from "@/lib/contest-format";
 import type { Account } from "@/types/account";
 import type { ContestDetail, ContestRegistration } from "@/types/contest";
 import AITextLoading from "@/components/ui/ai-text-loading";
@@ -104,12 +104,15 @@ export default function ContestPage() {
           </p>
           {contest.venue && (
             <p className="contest-meta">
-              <MapPin size={15} aria-hidden="true" /> Venue: {contest.venue}
+              <MapPin size={15} aria-hidden="true" /> Venue: {cleanVenue(contest.venue)}
             </p>
           )}
           {contest.registrationStatus === "OPEN" && !registration && contest.registrationClosesAt && (
             <p className="contest-meta contest-deadline">
-              <Hourglass size={15} aria-hidden="true" /> {formatRegistrationDeadline(contest.registrationClosesAt)}
+              <Hourglass size={15} aria-hidden="true" />{" "}
+              {contest.registrationStartsAt
+                ? formatRegistrationWindow(contest.registrationStartsAt, contest.registrationClosesAt)
+                : formatRegistrationDeadline(contest.registrationClosesAt)}
             </p>
           )}
           <ContestHighlights contest={contest} />
@@ -158,7 +161,11 @@ export default function ContestPage() {
       ) : (
         <div className="profile-panel">
           {contest.mandatory && <span className="status-pill is-mandatory">MANDATORY · Registration required</span>}
-          {slug === "execute-26-4" ? <ExecuteTeamRegistrationForm account={account} onSubmit={registerTeam} /> : <ContestRegistrationForm account={account} onSubmit={register} />}
+          {contest.participationType === "TEAM" || slug === "execute-26-4" ? (
+            <TeamRegistrationForm account={account} contest={contest} onSubmit={registerTeam} />
+          ) : (
+            <ContestRegistrationForm account={account} onSubmit={register} />
+          )}
         </div>
       )}
     </div>

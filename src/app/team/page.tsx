@@ -1,15 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import Link from "next/link";
 import {
   Award,
   ChevronLeft,
   ChevronRight,
   Globe,
 } from "lucide-react";
-import { BrandLogo } from "@/components/brand-logo";
-import { useTheme } from "@/components/theme-provider";
 import "./team.css";
 
 function InstagramIcon({ size = 16 }: { size?: number }) {
@@ -499,12 +496,8 @@ function getInitials(name: string) {
 }
 
 export default function TeamPage() {
-  const { theme, toggleTheme } = useTheme();
   const [activeRole, setActiveRole] = useState<RoleCategory>("faculty");
   const [selectedIndex, setSelectedIndex] = useState<number>(0);
-
-  const themeLabel =
-    theme === "dark" ? "Switch to light theme" : "Switch to dark theme";
 
   // Filter members by the selected category
   const roleMembers = teamMembers.filter((m) => {
@@ -640,6 +633,7 @@ export default function TeamPage() {
               <div className="gdg-avatar-ring">
                 <div className="gdg-avatar-inner">
                   {currentMember.image ? (
+                    /* eslint-disable-next-line @next/next/no-img-element */
                     <img
                       src={currentMember.image}
                       alt={currentMember.name}
@@ -840,6 +834,7 @@ export default function TeamPage() {
                   >
                     <div className="gdg-circle-frame">
                       {member.image ? (
+                        /* eslint-disable-next-line @next/next/no-img-element */
                         <img
                           src={member.image}
                           alt={member.name}

@@ -1,0 +1,63 @@
+export type AdminContest = {
+  id: string;
+  slug: string;
+  title: string;
+  description: string;
+  venue: string | null;
+  prizePool: string | null;
+  goodies: string | null;
+  participationType: "SOLO" | "TEAM";
+  minTeamSize: number;
+  maxTeamSize: number;
+  teamNameRequired?: boolean;
+  hackerrankRequired: boolean;
+  startsAt: string | null;
+  endsAt: string | null;
+  registrationStartsAt: string | null;
+  registrationClosesAt: string | null;
+  registrationStatus: "SOON" | "OPEN" | "CLOSED";
+  registrationsCount: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type LeaderboardParticipant = {
+  rank: number;
+  name: string;
+  email: string;
+  score: number | string;
+  enrollmentNo?: string;
+  college?: string;
+  raw?: Record<string, unknown>;
+};
+
+export type AdminAccessRecord = {
+  id: string;
+  identifier: string;
+  note: string | null;
+  createdAt: string;
+  isPermanent?: boolean;
+  matchedUser: {
+    id: string;
+    displayName: string;
+    email: string;
+    photoUrl: string | null;
+    role: string;
+  } | null;
+};
+
+export type GeneratedCertificate = {
+  name: string;
+  enrollmentNo: string;
+  email: string;
+  rank: number;
+  score: number | string;
+  contest: string;
+  date: string;
+  certificateType: "Participation";
+  filename: string;
+  path: string;
+  url: string;
+  status: string;
+};
+

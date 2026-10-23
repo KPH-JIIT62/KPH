@@ -7,6 +7,7 @@ import {
   ChevronDown,
   LogOut,
   Moon,
+  ShieldCheck,
   Sun,
   User,
 } from "lucide-react";
@@ -81,6 +82,19 @@ function ProfileMenu() {
             Profile
           </Link>
 
+          {account?.role === "ADMIN" && (
+            <Link
+              href="/dashboard/admin"
+              className="dropdown-item"
+              role="menuitem"
+              aria-current={pathname.startsWith("/dashboard/admin") ? "page" : undefined}
+              onClick={() => setOpen(false)}
+            >
+              <ShieldCheck size={15} aria-hidden="true" style={{ color: "var(--accent)" }} />
+              Admin Center
+            </Link>
+          )}
+
           <button
             type="button"
             className="dropdown-item dropdown-item-danger"
@@ -102,6 +116,7 @@ function ProfileMenu() {
 function TopNavigation() {
   const pathname = usePathname();
   const { theme, toggleTheme } = useTheme();
+  const { account } = useAccount();
   const themeLabel =
     theme === "dark" ? "Switch to light theme" : "Switch to dark theme";
 
@@ -131,6 +146,16 @@ function TopNavigation() {
                 </Link>
               );
             }),
+          )}
+          {account?.role === "ADMIN" && (
+            <Link
+              href="/dashboard/admin"
+              className={`nav-link top-nav-link${pathname.startsWith("/dashboard/admin") ? " nav-link-active" : ""}`}
+              aria-current={pathname.startsWith("/dashboard/admin") ? "page" : undefined}
+            >
+              <ShieldCheck size={16} strokeWidth={1.7} aria-hidden="true" />
+              <span>Admin</span>
+            </Link>
           )}
         </nav>
 

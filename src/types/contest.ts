@@ -12,6 +12,7 @@ export type ContestRegistration = {
 // SOON = "Registrations Opening Soon" (not open yet), OPEN = people can register, CLOSED = too late / switched off.
 // The server works this out (including the automatic close at registrationClosesAt), so the browser just displays it.
 export type RegistrationStatus = "SOON" | "OPEN" | "CLOSED";
+export type ParticipationType = "SOLO" | "TEAM";
 
 export type Contest = {
   id: string;
@@ -21,8 +22,14 @@ export type Contest = {
   venue: string | null; // null = not announced yet
   prizePool: string | null; // e.g. "Prize Pool of ₹6K"; null = none, so no badge is shown
   goodies: string | null; // e.g. "Exciting Goodies"; null = none, so no badge is shown
+  participationType?: ParticipationType; // "SOLO" | "TEAM"
+  minTeamSize?: number; // 1 - 6
+  maxTeamSize?: number; // 1 - 6
+  teamNameRequired?: boolean;
+  hackerrankRequired?: boolean;
   startsAt: string | null; // null = date not announced yet
   endsAt: string | null;
+  registrationStartsAt?: string | null;
   registrationClosesAt: string | null; // null = no deadline set
   registrationStatus: RegistrationStatus;
   registrationOpen: boolean; // same as registrationStatus === "OPEN"
