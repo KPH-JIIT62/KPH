@@ -3454,7 +3454,9 @@ fieldset.profile-field {
 .contest-highlight-meta {
   display: flex;
   align-items: center;
-  gap: 8px;
+  flex-wrap: wrap;
+  column-gap: 18px;
+  row-gap: 6px;
   color: var(--muted);
   font-size: 13px;
 }
@@ -3463,6 +3465,7 @@ fieldset.profile-field {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  white-space: nowrap;
 }
 
 .contest-highlight-cta {

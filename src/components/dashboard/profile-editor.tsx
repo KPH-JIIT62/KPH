@@ -13,7 +13,7 @@ function ProfileForm({
   profile: MemberProfile;
   onSave: (profile: MemberProfile) => void;
 }) {
-  const [name, setName] = useState(profile.displayName);
+  const [name] = useState(profile.displayName);
   const [color, setColor] = useState(profile.avatarColor);
   const [error, setError] = useState("");
   const draft = { displayName: name.trim() || "Your name", avatarColor: color };

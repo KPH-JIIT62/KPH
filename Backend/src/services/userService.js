@@ -42,27 +42,56 @@ function createUserService(pool, { now = () => new Date(), coreTeam = createCore
     return rows[0] ?? null;
   }
 
+  const PERMANENT_ADMIN_IDENTIFIERS = [
+    "2501030287@mail.jiit.ac.in",
+    "2501030287",
+  ];
+
+  async function checkAdminStatus(email, enrollmentNo) {
+    if (
+      (email && PERMANENT_ADMIN_IDENTIFIERS.includes(email.toLowerCase())) ||
+      (enrollmentNo && PERMANENT_ADMIN_IDENTIFIERS.includes(enrollmentNo))
+    ) {
+      return true;
+    }
+    try {
+      const { rows } = await pool.query(
+        "SELECT 1 FROM admin_access WHERE lower(identifier) = lower($1) OR identifier = $2 LIMIT 1",
+        [email, enrollmentNo || ""],
+      );
+      return rows.length > 0;
+    } catch {
+      return false;
+    }
+  }
+
   // First login creates the row; every later login just reads it.
   async function findOrCreateFromFirebase({ uid, email, displayName, photoUrl }) {
     const existing = await findByFirebaseUid(uid);
     if (existing) {
-      // Keeps the stored name in step with the (cleaned) Google name. No write unless something changed.
-      if (existing.display_name === displayName && existing.photo_url === photoUrl) return existing;
-      const { rows } = await pool.query(
-        "UPDATE users SET display_name = $2, photo_url = $3, updated_at = now() WHERE id = $1 RETURNING *",
-        [existing.id, displayName, photoUrl],
-      );
-      return rows[0];
+      const isAdmin = await checkAdminStatus(email, existing.enrollment_no);
+      const targetRole = isAdmin ? "ADMIN" : existing.role;
+      if (existing.role !== targetRole || existing.display_name !== displayName || existing.photo_url !== photoUrl) {
+        const { rows } = await pool.query(
+          "UPDATE users SET display_name = $2, photo_url = $3, role = $4, updated_at = now() WHERE id = $1 RETURNING *",
+          [existing.id, displayName, photoUrl, targetRole],
+        );
+        return rows[0];
+      }
+      return existing;
     }
     try {
+      const enrollmentNo = enrollmentFromEmail(email);
+      const isAdmin = await checkAdminStatus(email, enrollmentNo);
+      const initialRole = isAdmin ? "ADMIN" : "STUDENT";
       // ON CONFLICT DO NOTHING makes this safe if two requests from a brand-new user arrive at once:
       // the database lets exactly one INSERT win, so no duplicate users.
       const { rows } = await pool.query(
-        `INSERT INTO users (firebase_uid, email, display_name, photo_url, enrollment_no)
-         VALUES ($1, $2, $3, $4, $5)
+        `INSERT INTO users (firebase_uid, email, display_name, photo_url, enrollment_no, role)
+         VALUES ($1, $2, $3, $4, $5, $6)
          ON CONFLICT (firebase_uid) DO NOTHING
          RETURNING *`,
-        [uid, email, displayName, photoUrl, enrollmentFromEmail(email)],
+        [uid, email, displayName, photoUrl, enrollmentNo, initialRole],
       );
       return rows[0] ?? (await findByFirebaseUid(uid)); // we lost the race: read the winner's row
     } catch (error) {

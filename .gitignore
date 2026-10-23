@@ -1,8 +1,32 @@
 node_modules/
 .env
+.env.*
 .next/
 .env.local
 next-env.d.ts
+tsconfig.tsbuildinfo
+
+# OS & Editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
 
 # Core team list: personal data, never commit it
 Backend/private/
+
+# Python & Certificate Generator Artefacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.log
+.venv/
+venv/
+env/
+cert_gen/certificates/
+cert_gen/pipeline.log
+cert_gen/mail_automation/gmail_profile/
+cert_gen/mail_automation/outbox/
+cert_gen/mail_automation/sent.log
+cert_gen/mail_automation/__pycache__/
+
