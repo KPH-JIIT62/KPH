@@ -595,9 +595,13 @@ export default function AdminPage() {
               : `Successfully sent certificates via email to all ${res.sentCount} candidate(s)!`,
         });
       } else {
+        const failureReason =
+          !res.hasSenderConfigured
+            ? "SMTP credentials are not configured on the production server (Render). Please add SMTP_PASS and SMTP_USER in Render Dashboard -> Environment."
+            : res.results?.[0]?.reason || `All ${res.total} candidate email(s) were invalid or delivery failed.`;
         setFeedback({
           type: "error",
-          message: `Email dispatch failed: No certificates could be sent. All ${res.total} candidate email(s) were invalid or delivery failed.`,
+          message: `Email dispatch failed: ${failureReason}`,
         });
       }
     } catch (err) {

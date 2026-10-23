@@ -126,8 +126,10 @@ def send_batch(certificates, smtp_host, smtp_port, smtp_user, smtp_pass, from_em
     clean_pass = str(smtp_pass or "").strip().replace(" ", "")
     active_port = int(smtp_port or 587)
     active_ssl = False
+    last_smtp_error = None
 
     def connect_smtp():
+        nonlocal last_smtp_error
         ports_to_try = [(int(smtp_port or 587), False), (465, True)] if int(smtp_port or 587) != 465 else [(465, True), (587, False)]
         for test_port, use_ssl in ports_to_try:
             try:
@@ -146,6 +148,7 @@ def send_batch(certificates, smtp_host, smtp_port, smtp_user, smtp_pass, from_em
                 log.info("Instant SMTP authenticated successfully as %s on port %s", smtp_user, test_port)
                 return s, test_port, use_ssl
             except Exception as exc:
+                last_smtp_error = str(exc)
                 log.warning("SMTP connection on port %s failed: %s", test_port, exc)
         return None, 587, False
 
@@ -156,7 +159,7 @@ def send_batch(certificates, smtp_host, smtp_port, smtp_user, smtp_pass, from_em
         log.info("Dispatch mode: INSTANT SMTP (1-second per email) via %s", smtp_user)
     else:
         if has_smtp:
-            log.warning("Direct SMTP ports (587/465) blocked by network/college firewall. Falling back to Gmail Web automation...")
+            log.warning("Direct SMTP connection failed or blocked: %s. Falling back to Gmail Web / Outbox...", last_smtp_error)
         has_smtp = False
 
     # 2. If SMTP is not active, initialize Gmail Web Playwright fallback
@@ -235,6 +238,24 @@ def send_batch(certificates, smtp_host, smtp_port, smtp_user, smtp_pass, from_em
             if fallback.exists() and fallback.is_file():
                 pdf_path = fallback
 
+        if not pdf_path or not pdf_path.exists() or not pdf_path.is_file():
+            certs_dir = Path(__file__).resolve().parent / "certificates"
+            if certs_dir.exists():
+                candidates = list(certs_dir.glob("*.pdf"))
+                # Match by enrollment first
+                if enrollment:
+                    for cand in candidates:
+                        if str(enrollment) in cand.name:
+                            pdf_path = cand
+                            break
+                # Match by student name
+                if (not pdf_path or not pdf_path.exists()) and name:
+                    clean_n = re.sub(r"[^\w\-]", "_", name).strip("_")
+                    for cand in candidates:
+                        if clean_n and clean_n in cand.name:
+                            pdf_path = cand
+                            break
+
         valid, reason = is_valid_email(email)
         if not valid:
             results.append({
@@ -281,6 +302,7 @@ def send_batch(certificates, smtp_host, smtp_port, smtp_user, smtp_pass, from_em
             html_body = template_text
 
         # 1. Try Instant SMTP Delivery if configured (1-second dispatch)
+        smtp_attempt_error = None
         if has_smtp:
             sent_via_smtp = False
             for attempt in range(2):
@@ -289,6 +311,7 @@ def send_batch(certificates, smtp_host, smtp_port, smtp_user, smtp_pass, from_em
                         log.info("Reconnecting SMTP for %s...", email)
                         server, active_port, active_ssl = connect_smtp()
                     if not server:
+                        smtp_attempt_error = last_smtp_error or "Failed to establish SMTP connection"
                         break
 
                     msg = MIMEMultipart()
@@ -317,6 +340,7 @@ def send_batch(certificates, smtp_host, smtp_port, smtp_user, smtp_pass, from_em
                     sent_via_smtp = True
                     break
                 except Exception as exc:
+                    smtp_attempt_error = str(exc)
                     log.warning("SMTP dispatch attempt %d failed for %s: %s", attempt + 1, email, exc)
                     if server:
                         try:
@@ -376,14 +400,23 @@ def send_batch(certificates, smtp_host, smtp_port, smtp_user, smtp_pass, from_em
             outbox_eml = OUTBOX_DIR / f"{safe_prefix}.eml"
             outbox_eml.write_bytes(eml_msg.as_bytes())
 
+            if smtp_attempt_error:
+                dispatch_reason = f"SMTP dispatch failed: {smtp_attempt_error}"
+            elif not clean_pass:
+                dispatch_reason = "SMTP password (SMTP_PASS) is not configured in server environment."
+            elif not has_gmail_profile:
+                dispatch_reason = "No email sender configured (SMTP credentials missing or ports blocked)."
+            else:
+                dispatch_reason = "Email not delivered. Please log into Gmail using python3 cert_gen/mail_automation/gmail_sender.py --login"
+
             results.append({
                 "name": name,
                 "email": email,
                 "status": "FAILED",
                 "filename": pdf_path.name,
-                "reason": "Email not delivered. Please log into Gmail using python3 cert_gen/mail_automation/gmail_sender.py --login",
+                "reason": dispatch_reason,
             })
-            log.warning("Email not sent for %s <%s>; saved backup package to outbox", name, email)
+            log.warning("Email not sent for %s <%s>: %s", name, email, dispatch_reason)
         except Exception as exc:
             log.error("Failed to package certificate dispatch for %s: %s", email, exc)
             results.append({

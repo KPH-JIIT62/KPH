@@ -424,12 +424,19 @@ function createAdminService(pool, { now = () => new Date() } = {}) {
     await fs.promises.writeFile(tempFile, JSON.stringify(certificates), "utf-8");
 
     try {
-      const pythonProcess = spawn("python3", [
+      const emailArgs = [
         EMAIL_SCRIPT,
         "--contest", contestTitle,
         "--json", tempFile,
         "--emit-json",
-      ], {
+      ];
+      if (process.env.SMTP_HOST) emailArgs.push("--smtp-host", process.env.SMTP_HOST);
+      if (process.env.SMTP_PORT) emailArgs.push("--smtp-port", process.env.SMTP_PORT);
+      if (process.env.SMTP_USER) emailArgs.push("--smtp-user", process.env.SMTP_USER);
+      if (process.env.SMTP_PASS) emailArgs.push("--smtp-pass", process.env.SMTP_PASS);
+      if (process.env.SMTP_FROM) emailArgs.push("--from-email", process.env.SMTP_FROM);
+
+      const pythonProcess = spawn("python3", emailArgs, {
         env: {
           ...process.env,
         },
