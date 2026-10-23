@@ -146,7 +146,11 @@ export default function ContestPage() {
             <dd>{formatContestDate(registration.createdAt)}</dd>
             </>}
           </dl>
-          <WithdrawRegistration contest={contest} onWithdraw={withdraw} />
+          {slug === "execute-26-4" && registration.role !== "LEADER" ? (
+            <p className="panel-help">Only the team leader can withdraw this team registration.</p>
+          ) : (
+            <WithdrawRegistration contest={contest} onWithdraw={withdraw} />
+          )}
         </div>
       ) : contest.registrationStatus === "SOON" ? (
         <div className="profile-panel">
