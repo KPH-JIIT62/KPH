@@ -330,11 +330,37 @@ function createAdminService(pool, { now = () => new Date() } = {}) {
     };
   }
 
+  let pythonDepsChecked = false;
+  async function ensurePythonDeps() {
+    if (pythonDepsChecked) return;
+    try {
+      await new Promise((resolve) => {
+        const check = spawn("python3", ["-c", "import reportlab, pypdf"]);
+        check.on("close", (code) => {
+          if (code === 0) {
+            pythonDepsChecked = true;
+            return resolve();
+          }
+          console.log("[adminService] reportlab/pypdf missing. Running pip3 install reportlab pypdf...");
+          const install = spawn("pip3", ["install", "reportlab", "pypdf"]);
+          install.on("close", () => {
+            pythonDepsChecked = true;
+            resolve();
+          });
+        });
+      });
+    } catch (e) {
+      console.warn("[adminService] Python dependency auto-install skipped:", e.message);
+    }
+  }
+
   // Prepares certificate generation batch and runs cert_gen/generate_certificates.py
   async function generateCertificates({ contestSlug, customTitle, date, recipients }) {
     if (!Array.isArray(recipients) || recipients.length === 0) {
       throw new HttpError(400, "NO_RECIPIENTS", "Please provide at least one recipient to generate certificates.");
     }
+
+    await ensurePythonDeps();
 
     const { rows: contestRows } = await pool.query("SELECT * FROM contests WHERE slug = $1", [contestSlug]);
     const contest = contestRows[0];

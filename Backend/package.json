@@ -4,6 +4,7 @@
   "description": "",
   "main": "server.js",
   "scripts": {
+    "postinstall": "pip3 install -r requirements.txt || pip3 install -r ../requirements.txt || pip install -r requirements.txt || true",
     "start": "node server.js",
     "dev": "node --watch server.js",
     "migrate": "node scripts/migrate.js",
