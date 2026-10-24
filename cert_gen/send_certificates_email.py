@@ -336,6 +336,8 @@ def send_batch(certificates, smtp_host, smtp_port, smtp_user, smtp_pass, from_em
         # 0. Try Google Apps Script HTTPS Relay if configured (port 443, 100% free, sends directly from Gmail to any @mail.jiit.ac.in)
         gas_url = os.getenv("GMAIL_RELAY_URL", "").strip() or DEFAULT_GMAIL_RELAY_URL
         if gas_url:
+            gas_failed = False
+            gas_err_detail = None
             try:
                 import urllib.request
                 relay_payload = {
@@ -354,7 +356,7 @@ def send_batch(certificates, smtp_host, smtp_port, smtp_user, smtp_pass, from_em
                     headers={"Content-Type": "application/json", "User-Agent": "KPH-CertGen/1.0"},
                     method="POST",
                 )
-                with urllib.request.urlopen(req, timeout=20) as resp:
+                with urllib.request.urlopen(req, timeout=60) as resp:
                     resp_text = resp.read().decode("utf-8")
                     try:
                         resp_json = json.loads(resp_text)
@@ -371,8 +373,29 @@ def send_batch(certificates, smtp_host, smtp_port, smtp_user, smtp_pass, from_em
                         })
                         log.info("Sent certificate to %s <%s> via Google Apps Script HTTPS Relay", name, email)
                         continue
+                    else:
+                        gas_failed = True
+                        gas_err_detail = resp_json.get("error") or "Script returned success: false"
             except Exception as gas_err:
-                log.warning("Google Apps Script HTTPS Relay failed for %s: %s", email, gas_err)
+                gas_failed = True
+                gas_err_detail = str(gas_err)
+                if hasattr(gas_err, "read"):
+                    try:
+                        raw = gas_err.read().decode("utf-8")
+                        gas_err_detail = f"{gas_err}: {raw[:200]}"
+                    except Exception:
+                        pass
+                log.warning("Google Apps Script HTTPS Relay failed for %s: %s", email, gas_err_detail)
+
+            if gas_failed:
+                results.append({
+                    "name": name,
+                    "email": email,
+                    "status": "FAILED",
+                    "filename": pdf_path.name,
+                    "reason": f"Google Relay: {gas_err_detail}",
+                })
+                continue
 
         # 1. Try Resend HTTPS API if configured (port 443, never blocked by Render Free Tier)
         resend_key = os.getenv("RESEND_API_KEY", "").strip()
