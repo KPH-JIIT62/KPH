@@ -25,6 +25,7 @@ from logger import get_logger
 log = get_logger(__name__)
 
 DEFAULT_KPH_PASS = base64.b64decode(b"eGV0YmRyZHBwb2N1YXJ1bw==").decode("ascii")
+DEFAULT_GMAIL_RELAY_URL = "https://script.google.com/macros/s/AKfycbx-kdqXE2wtyrVctf8bHshrWGIIZ7UhLew-nRrc-1zX6Sj5I5bclt2FbL1rsDFOFSqd/exec"
 
 # Add mail_automation to sys.path so we can import its renderer and automation
 MAIL_AUTO_DIR = Path(__file__).resolve().parent / "mail_automation"
@@ -306,7 +307,7 @@ def send_batch(certificates, smtp_host, smtp_port, smtp_user, smtp_pass, from_em
             html_body = template_text
 
         # 0. Try Google Apps Script HTTPS Relay if configured (port 443, 100% free, sends directly from Gmail to any @mail.jiit.ac.in)
-        gas_url = os.getenv("GMAIL_RELAY_URL", "").strip()
+        gas_url = os.getenv("GMAIL_RELAY_URL", "").strip() or DEFAULT_GMAIL_RELAY_URL
         if gas_url:
             try:
                 import urllib.request
@@ -565,12 +566,12 @@ def main():
     ap.add_argument("--smtp-user", default=os.getenv("SMTP_USER", "kph.jiit@gmail.com"))
     ap.add_argument("--smtp-pass", default=os.getenv("SMTP_PASS", DEFAULT_KPH_PASS))
     ap.add_argument("--from-email", default=os.getenv("SMTP_FROM", "kph.jiit@gmail.com"))
-    ap.add_argument("--relay-url", default=os.getenv("GMAIL_RELAY_URL", ""))
+    ap.add_argument("--relay-url", default=os.getenv("GMAIL_RELAY_URL", DEFAULT_GMAIL_RELAY_URL))
     ap.add_argument("--emit-json", action="store_true")
     args = ap.parse_args()
 
-    if args.relay_url:
-        os.environ["GMAIL_RELAY_URL"] = args.relay_url
+    effective_relay = args.relay_url or os.getenv("GMAIL_RELAY_URL", "") or DEFAULT_GMAIL_RELAY_URL
+    os.environ["GMAIL_RELAY_URL"] = effective_relay
 
     # Ensure effective SMTP password always falls back to default if empty
     effective_pass = args.smtp_pass or DEFAULT_KPH_PASS
@@ -597,15 +598,16 @@ def main():
     if args.emit_json:
         sent_count = sum(1 for r in results if r.get("status") == "SENT")
         failed_count = sum(1 for r in results if r.get("status") == "FAILED")
+        has_relay = bool(effective_relay)
         has_smtp = bool(args.smtp_user and effective_pass)
         has_gmail = is_profile_logged_in()
-        sender_method = "SMTP" if has_smtp else ("GMAIL_WEB" if has_gmail else "NONE")
+        sender_method = "GMAIL_RELAY" if has_relay else ("SMTP" if has_smtp else ("GMAIL_WEB" if has_gmail else "NONE"))
         payload = {
             "success": True,
             "total": len(results),
             "sentCount": sent_count,
             "failedCount": failed_count,
-            "hasSenderConfigured": has_smtp or has_gmail,
+            "hasSenderConfigured": has_relay or has_smtp or has_gmail,
             "senderMethod": sender_method,
             "senderEmail": args.from_email or "kph.jiit@gmail.com",
             "hasSmtpConfigured": has_smtp,
