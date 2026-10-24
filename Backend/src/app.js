@@ -36,7 +36,7 @@ function createApp({ env, pool, verifyToken, now }) {
   );
   app.use(express.json({ limit: "10mb" })); // turns JSON bodies into req.body; supports leaderboard uploads
 
-  app.get("/api/health", (req, res) => res.json({ ok: true, service: "kph-api", version: "1.0.1", relay: "GMAIL_APPS_SCRIPT" })); // public
+  app.get("/api/health", (req, res) => res.json({ ok: true, service: "kph-api", version: "1.0.2", relay: "GMAIL_APPS_SCRIPT" })); // public
 
   const requireLogin = authenticate({ verifyToken, userService, allowedEmailDomain: env.allowedEmailDomain });
   app.use("/api/users", requireLogin, createUsersRouter(createUsersController(userService)));
