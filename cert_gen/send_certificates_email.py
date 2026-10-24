@@ -14,6 +14,8 @@ import os
 import re
 import smtplib
 import sys
+import urllib.request
+import urllib.error
 from email import encoders
 from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
@@ -117,6 +119,80 @@ def is_valid_email(email):
     if local.isdigit() and len(local) < 8:
         return False, f"Invalid student email: enrollment '{local}' must be at least 8 digits"
     return True, ""
+
+
+def send_via_google_relay(gas_url, email, subject, html_body, pdf_path, timeout=60):
+    """
+    Sends email + PDF attachment via Google Apps Script HTTPS Web App.
+    Uses browser User-Agent and handles Google's 302 redirect explicitly to avoid 403 blocks.
+    """
+    browser_ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+    relay_payload = {
+        "to": email,
+        "subject": subject,
+        "htmlBody": html_body,
+        "attachments": [{
+            "filename": pdf_path.name,
+            "content": base64.b64encode(pdf_path.read_bytes()).decode("ascii"),
+            "type": "application/pdf",
+        }],
+    }
+    data = json.dumps(relay_payload).encode("utf-8")
+
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            return None
+
+    opener = urllib.request.build_opener(NoRedirect)
+    post_req = urllib.request.Request(
+        gas_url,
+        data=data,
+        headers={
+            "Content-Type": "application/json",
+            "User-Agent": browser_ua,
+            "Accept": "*/*",
+        },
+        method="POST",
+    )
+
+    resp_text = None
+    try:
+        resp = opener.open(post_req, timeout=timeout)
+        resp_text = resp.read().decode("utf-8")
+    except urllib.error.HTTPError as redirect_err:
+        if redirect_err.code in (301, 302, 303, 307, 308):
+            redirect_url = redirect_err.headers.get("Location")
+            if not redirect_url:
+                raise RuntimeError(f"Redirect {redirect_err.code} without Location header")
+            get_req = urllib.request.Request(
+                redirect_url,
+                headers={
+                    "User-Agent": browser_ua,
+                    "Accept": "*/*",
+                },
+                method="GET",
+            )
+            with urllib.request.urlopen(get_req, timeout=timeout) as get_resp:
+                resp_text = get_resp.read().decode("utf-8")
+        else:
+            raw_err = ""
+            if hasattr(redirect_err, "read"):
+                try:
+                    raw_err = redirect_err.read().decode("utf-8")[:200]
+                except Exception:
+                    pass
+            raise RuntimeError(f"HTTP {redirect_err.code} {redirect_err.reason}: {raw_err}")
+
+    try:
+        resp_json = json.loads(resp_text)
+    except Exception:
+        resp_json = {"success": True}
+
+    if resp_json.get("success") is False:
+        err_msg = resp_json.get("error") or "Script returned success: false"
+        raise RuntimeError(err_msg)
+
+    return True
 
 
 def send_batch(certificates, smtp_host, smtp_port, smtp_user, smtp_pass, from_email, contest_name, date_str=None):
@@ -333,130 +409,29 @@ def send_batch(certificates, smtp_host, smtp_port, smtp_user, smtp_pass, from_em
             subject = f"Certificate - {contest_name}"
             html_body = template_text
 
-        # 0. Try Google Apps Script HTTPS Relay if configured (port 443, 100% free, sends directly from Gmail to any @mail.jiit.ac.in)
+        # 0. Primary Cloud Dispatch: Google Apps Script HTTPS Relay (port 443, 100% free, sends directly from Gmail to any @mail.jiit.ac.in)
         gas_url = os.getenv("GMAIL_RELAY_URL", "").strip() or DEFAULT_GMAIL_RELAY_URL
         if gas_url:
-            gas_failed = False
-            gas_err_detail = None
             try:
-                import urllib.request
-                relay_payload = {
-                    "to": email,
-                    "subject": subject,
-                    "htmlBody": html_body,
-                    "attachments": [{
-                        "filename": pdf_path.name,
-                        "content": base64.b64encode(pdf_path.read_bytes()).decode("ascii"),
-                        "type": "application/pdf",
-                    }],
-                }
-                req = urllib.request.Request(
-                    gas_url,
-                    data=json.dumps(relay_payload).encode("utf-8"),
-                    headers={"Content-Type": "application/json", "User-Agent": "KPH-CertGen/1.0"},
-                    method="POST",
-                )
-                with urllib.request.urlopen(req, timeout=60) as resp:
-                    resp_text = resp.read().decode("utf-8")
-                    try:
-                        resp_json = json.loads(resp_text)
-                    except Exception:
-                        resp_json = {"success": True}
-                    if resp_json.get("success") is not False:
-                        mark_sent(pdf_path.name)
-                        results.append({
-                            "name": name,
-                            "email": email,
-                            "status": "SENT",
-                            "filename": pdf_path.name,
-                            "method": "GMAIL_HTTPS_RELAY",
-                        })
-                        log.info("Sent certificate to %s <%s> via Google Apps Script HTTPS Relay", name, email)
-                        continue
-                    else:
-                        gas_failed = True
-                        gas_err_detail = resp_json.get("error") or "Script returned success: false"
-            except Exception as gas_err:
-                gas_failed = True
-                gas_err_detail = str(gas_err)
-                if hasattr(gas_err, "read"):
-                    try:
-                        raw = gas_err.read().decode("utf-8")
-                        gas_err_detail = f"{gas_err}: {raw[:200]}"
-                    except Exception:
-                        pass
-                log.warning("Google Apps Script HTTPS Relay failed for %s: %s", email, gas_err_detail)
-
-            if gas_failed:
+                send_via_google_relay(gas_url, email, subject, html_body, pdf_path, timeout=60)
+                mark_sent(pdf_path.name)
                 results.append({
                     "name": name,
                     "email": email,
-                    "status": "FAILED",
+                    "status": "SENT",
                     "filename": pdf_path.name,
-                    "reason": f"Google Relay: {gas_err_detail}",
+                    "method": "GMAIL_HTTPS_RELAY",
                 })
+                log.info("Sent certificate to %s <%s> via Google Apps Script HTTPS Relay", name, email)
                 continue
-
-        # 1. Try Resend HTTPS API if configured (port 443, never blocked by Render Free Tier)
-        resend_key = os.getenv("RESEND_API_KEY", "").strip()
-        resend_error_detail = None
-        if resend_key:
-            try:
-                import urllib.request
-                import urllib.error
-                resend_from = os.getenv("RESEND_FROM", "").strip() or "Knuth Programming Hub <onboarding@resend.dev>"
-                resend_payload = {
-                    "from": resend_from,
-                    "to": [email],
-                    "subject": subject,
-                    "html": html_body,
-                    "attachments": [{
-                        "filename": pdf_path.name,
-                        "content": base64.b64encode(pdf_path.read_bytes()).decode("ascii"),
-                    }],
-                }
-                req = urllib.request.Request(
-                    "https://api.resend.com/emails",
-                    data=json.dumps(resend_payload).encode("utf-8"),
-                    headers={
-                        "Authorization": f"Bearer {resend_key}",
-                        "Content-Type": "application/json",
-                        "User-Agent": "KPH-CertGen/1.0",
-                    },
-                    method="POST",
-                )
-                with urllib.request.urlopen(req, timeout=8) as resp:
-                    if resp.status in (200, 201):
-                        mark_sent(pdf_path.name)
-                        results.append({
-                            "name": name,
-                            "email": email,
-                            "status": "SENT",
-                            "filename": pdf_path.name,
-                            "method": "RESEND_HTTPS",
-                        })
-                        log.info("Sent certificate to %s <%s> via Resend HTTPS", name, email)
-                        continue
-            except Exception as resend_err:
-                resend_error_detail = str(resend_err)
-                if hasattr(resend_err, "read"):
-                    try:
-                        raw_err = resend_err.read().decode("utf-8")
-                        err_json = json.loads(raw_err)
-                        resend_error_detail = err_json.get("message") or raw_err
-                    except Exception:
-                        pass
-                log.warning("Resend HTTPS dispatch failed for %s: %s", email, resend_error_detail)
-
-            # If Resend is configured but rejected the recipient, and SMTP is blocked by cloud firewall:
-            # Report Resend's exact error immediately without waiting for blocked SMTP ports to time out!
-            if not server:
+            except Exception as gas_err:
+                log.warning("Google Apps Script HTTPS Relay failed for %s: %s", email, gas_err)
                 results.append({
                     "name": name,
                     "email": email,
                     "status": "FAILED",
                     "filename": pdf_path.name,
-                    "reason": f"Resend: {resend_error_detail}",
+                    "reason": f"Google Relay: {gas_err}",
                 })
                 continue
 

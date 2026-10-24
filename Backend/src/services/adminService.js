@@ -456,9 +456,6 @@ function createAdminService(pool, { now = () => new Date() } = {}) {
           SMTP_USER: smtpUser,
           SMTP_PASS: smtpPass,
           SMTP_FROM: smtpFrom,
-          // When Google Relay is configured, do not pass RESEND_API_KEY to prevent any possibility of fallthrough
-          RESEND_API_KEY: relayUrl ? "" : (process.env.RESEND_API_KEY || ""),
-          RESEND_FROM: process.env.RESEND_FROM || "",
         },
       });
 
