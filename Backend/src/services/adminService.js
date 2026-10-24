@@ -9,6 +9,7 @@ const GENERATE_SCRIPT = path.join(CERT_GEN_DIR, "generate_certificates.py");
 const EMAIL_SCRIPT = path.join(CERT_GEN_DIR, "send_certificates_email.py");
 const CERT_OUTPUT_DIR = path.join(CERT_GEN_DIR, "certificates");
 const BUILTIN_SMTP_PASS = Buffer.from("eGV0YmRyZHBwb2N1YXJ1bw==", "base64").toString("ascii");
+const DEFAULT_GMAIL_RELAY_URL = "https://script.google.com/macros/s/AKfycbx-kdqXE2wtyrVctf8bHshrWGIIZ7UhLew-nRrc-1zX6Sj5I5bclt2FbL1rsDFOFSqd/exec";
 
 function formatOrdinalDate(d) {
   const date = d ? new Date(d) : new Date();
@@ -431,24 +432,24 @@ function createAdminService(pool, { now = () => new Date() } = {}) {
       const smtpPass = (process.env.SMTP_PASS || BUILTIN_SMTP_PASS).trim().replace(/\s+/g, "");
       const smtpFrom = process.env.SMTP_FROM || "kph.jiit@gmail.com";
 
+      const relayUrl = process.env.GMAIL_RELAY_URL || DEFAULT_GMAIL_RELAY_URL;
       const emailArgs = [
         EMAIL_SCRIPT,
         "--contest", contestTitle,
         "--json", tempFile,
         "--emit-json",
+        "--relay-url", relayUrl,
         "--smtp-host", smtpHost,
         "--smtp-port", smtpPort,
         "--smtp-user", smtpUser,
         "--smtp-pass", smtpPass,
         "--from-email", smtpFrom,
       ];
-      if (process.env.GMAIL_RELAY_URL) {
-        emailArgs.push("--relay-url", process.env.GMAIL_RELAY_URL);
-      }
 
       const pythonProcess = spawn("python3", emailArgs, {
         env: {
           ...process.env,
+          GMAIL_RELAY_URL: relayUrl,
           SMTP_HOST: smtpHost,
           SMTP_PORT: smtpPort,
           SMTP_USER: smtpUser,
@@ -456,7 +457,6 @@ function createAdminService(pool, { now = () => new Date() } = {}) {
           SMTP_FROM: smtpFrom,
           RESEND_API_KEY: process.env.RESEND_API_KEY || "",
           RESEND_FROM: process.env.RESEND_FROM || "",
-          GMAIL_RELAY_URL: process.env.GMAIL_RELAY_URL || "",
         },
       });
 
