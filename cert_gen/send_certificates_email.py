@@ -261,6 +261,33 @@ def send_batch(certificates, smtp_host, smtp_port, smtp_user, smtp_pass, from_em
                             pdf_path = cand
                             break
 
+        # On-the-fly fallback: Auto-generate missing certificate if not on disk (e.g. after cloud container redeploy)
+        if not pdf_path or not pdf_path.exists() or not pdf_path.is_file():
+            try:
+                sys.path.insert(0, str(Path(__file__).resolve().parent))
+                from generate_certificates import build_certificate_pdf, register_font, safe_filename
+                certs_dir = Path(__file__).resolve().parent / "certificates"
+                certs_dir.mkdir(parents=True, exist_ok=True)
+                tpl_path = Path(__file__).resolve().parent / "template-nish.pdf"
+                if not tpl_path.exists():
+                    tpl_path = Path(__file__).resolve().parent / "template.pdf"
+                font_path = Path(__file__).resolve().parent / "Satisfy-Regular.ttf"
+                font_name = register_font(font_path if font_path.exists() else None)
+
+                name_part = safe_filename(name or "Participant")
+                enr_part = safe_filename(enrollment or "Student")
+                contest_part = safe_filename(contest_name)
+                auto_filename = filename or f"{name_part}_{enr_part}_{contest_part}.pdf"
+                auto_pdf = certs_dir / auto_filename
+
+                date_stamp = date_str or "24th October 2026"
+                build_certificate_pdf(tpl_path, auto_pdf, name or "Participant", contest_name, date_stamp, font_name)
+                if auto_pdf.exists() and auto_pdf.is_file():
+                    pdf_path = auto_pdf
+                    log.info("Auto-generated missing certificate PDF on the fly: %s", auto_pdf.name)
+            except Exception as auto_gen_err:
+                log.warning("Could not auto-generate missing PDF: %s", auto_gen_err)
+
         valid, reason = is_valid_email(email)
         if not valid:
             results.append({
