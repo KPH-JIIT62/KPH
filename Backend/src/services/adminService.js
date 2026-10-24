@@ -442,6 +442,9 @@ function createAdminService(pool, { now = () => new Date() } = {}) {
         "--smtp-pass", smtpPass,
         "--from-email", smtpFrom,
       ];
+      if (process.env.GMAIL_RELAY_URL) {
+        emailArgs.push("--relay-url", process.env.GMAIL_RELAY_URL);
+      }
 
       const pythonProcess = spawn("python3", emailArgs, {
         env: {
@@ -451,6 +454,9 @@ function createAdminService(pool, { now = () => new Date() } = {}) {
           SMTP_USER: smtpUser,
           SMTP_PASS: smtpPass,
           SMTP_FROM: smtpFrom,
+          RESEND_API_KEY: process.env.RESEND_API_KEY || "",
+          RESEND_FROM: process.env.RESEND_FROM || "",
+          GMAIL_RELAY_URL: process.env.GMAIL_RELAY_URL || "",
         },
       });
 

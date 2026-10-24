@@ -139,9 +139,9 @@ def send_batch(certificates, smtp_host, smtp_port, smtp_user, smtp_pass, from_em
             try:
                 log.info("Connecting to Instant SMTP server at %s:%s (SSL=%s)...", smtp_host, test_port, use_ssl)
                 if use_ssl:
-                    s = smtplib.SMTP_SSL(smtp_host, test_port, timeout=8)
+                    s = smtplib.SMTP_SSL(smtp_host, test_port, timeout=4)
                 else:
-                    s = smtplib.SMTP(smtp_host, test_port, timeout=8)
+                    s = smtplib.SMTP(smtp_host, test_port, timeout=4)
                     s.ehlo()
                     s.starttls()
                 s.ehlo()
@@ -305,13 +305,57 @@ def send_batch(certificates, smtp_host, smtp_port, smtp_user, smtp_pass, from_em
             subject = f"Certificate - {contest_name}"
             html_body = template_text
 
-        # 0. Try Resend HTTPS API if configured (port 443, never blocked by Render Free Tier)
+        # 0. Try Google Apps Script HTTPS Relay if configured (port 443, 100% free, sends directly from Gmail to any @mail.jiit.ac.in)
+        gas_url = os.getenv("GMAIL_RELAY_URL", "").strip()
+        if gas_url:
+            try:
+                import urllib.request
+                relay_payload = {
+                    "to": email,
+                    "subject": subject,
+                    "htmlBody": html_body,
+                    "attachments": [{
+                        "filename": pdf_path.name,
+                        "content": base64.b64encode(pdf_path.read_bytes()).decode("ascii"),
+                        "type": "application/pdf",
+                    }],
+                }
+                req = urllib.request.Request(
+                    gas_url,
+                    data=json.dumps(relay_payload).encode("utf-8"),
+                    headers={"Content-Type": "application/json", "User-Agent": "KPH-CertGen/1.0"},
+                    method="POST",
+                )
+                with urllib.request.urlopen(req, timeout=20) as resp:
+                    resp_text = resp.read().decode("utf-8")
+                    try:
+                        resp_json = json.loads(resp_text)
+                    except Exception:
+                        resp_json = {"success": True}
+                    if resp_json.get("success") is not False:
+                        mark_sent(pdf_path.name)
+                        results.append({
+                            "name": name,
+                            "email": email,
+                            "status": "SENT",
+                            "filename": pdf_path.name,
+                            "method": "GMAIL_HTTPS_RELAY",
+                        })
+                        log.info("Sent certificate to %s <%s> via Google Apps Script HTTPS Relay", name, email)
+                        continue
+            except Exception as gas_err:
+                log.warning("Google Apps Script HTTPS Relay failed for %s: %s", email, gas_err)
+
+        # 1. Try Resend HTTPS API if configured (port 443, never blocked by Render Free Tier)
         resend_key = os.getenv("RESEND_API_KEY", "").strip()
+        resend_error_detail = None
         if resend_key:
             try:
                 import urllib.request
+                import urllib.error
+                resend_from = os.getenv("RESEND_FROM", "").strip() or "Knuth Programming Hub <onboarding@resend.dev>"
                 resend_payload = {
-                    "from": os.getenv("RESEND_FROM", "Knuth Programming Hub <certificates@resend.dev>"),
+                    "from": resend_from,
                     "to": [email],
                     "subject": subject,
                     "html": html_body,
@@ -330,7 +374,7 @@ def send_batch(certificates, smtp_host, smtp_port, smtp_user, smtp_pass, from_em
                     },
                     method="POST",
                 )
-                with urllib.request.urlopen(req, timeout=15) as resp:
+                with urllib.request.urlopen(req, timeout=8) as resp:
                     if resp.status in (200, 201):
                         mark_sent(pdf_path.name)
                         results.append({
@@ -343,7 +387,27 @@ def send_batch(certificates, smtp_host, smtp_port, smtp_user, smtp_pass, from_em
                         log.info("Sent certificate to %s <%s> via Resend HTTPS", name, email)
                         continue
             except Exception as resend_err:
-                log.warning("Resend HTTPS dispatch failed for %s: %s", email, resend_err)
+                resend_error_detail = str(resend_err)
+                if hasattr(resend_err, "read"):
+                    try:
+                        raw_err = resend_err.read().decode("utf-8")
+                        err_json = json.loads(raw_err)
+                        resend_error_detail = err_json.get("message") or raw_err
+                    except Exception:
+                        pass
+                log.warning("Resend HTTPS dispatch failed for %s: %s", email, resend_error_detail)
+
+            # If Resend is configured but rejected the recipient, and SMTP is blocked by cloud firewall:
+            # Report Resend's exact error immediately without waiting for blocked SMTP ports to time out!
+            if not server:
+                results.append({
+                    "name": name,
+                    "email": email,
+                    "status": "FAILED",
+                    "filename": pdf_path.name,
+                    "reason": f"Resend: {resend_error_detail}",
+                })
+                continue
 
         # 1. Try Instant SMTP Delivery if configured (1-second dispatch)
         smtp_attempt_error = None
@@ -501,8 +565,12 @@ def main():
     ap.add_argument("--smtp-user", default=os.getenv("SMTP_USER", "kph.jiit@gmail.com"))
     ap.add_argument("--smtp-pass", default=os.getenv("SMTP_PASS", DEFAULT_KPH_PASS))
     ap.add_argument("--from-email", default=os.getenv("SMTP_FROM", "kph.jiit@gmail.com"))
+    ap.add_argument("--relay-url", default=os.getenv("GMAIL_RELAY_URL", ""))
     ap.add_argument("--emit-json", action="store_true")
     args = ap.parse_args()
+
+    if args.relay_url:
+        os.environ["GMAIL_RELAY_URL"] = args.relay_url
 
     # Ensure effective SMTP password always falls back to default if empty
     effective_pass = args.smtp_pass or DEFAULT_KPH_PASS
