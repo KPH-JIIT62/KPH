@@ -433,6 +433,7 @@ function createAdminService(pool, { now = () => new Date() } = {}) {
       const smtpFrom = process.env.SMTP_FROM || "kph.jiit@gmail.com";
 
       const relayUrl = process.env.GMAIL_RELAY_URL || DEFAULT_GMAIL_RELAY_URL;
+      console.log(`[adminService] Dispatching ${certificates.length} certificates for contest "${contestTitle}". Relay: ${relayUrl ? "ACTIVE" : "NONE"}`);
       const emailArgs = [
         EMAIL_SCRIPT,
         "--contest", contestTitle,
@@ -455,7 +456,8 @@ function createAdminService(pool, { now = () => new Date() } = {}) {
           SMTP_USER: smtpUser,
           SMTP_PASS: smtpPass,
           SMTP_FROM: smtpFrom,
-          RESEND_API_KEY: process.env.RESEND_API_KEY || "",
+          // When Google Relay is configured, do not pass RESEND_API_KEY to prevent any possibility of fallthrough
+          RESEND_API_KEY: relayUrl ? "" : (process.env.RESEND_API_KEY || ""),
           RESEND_FROM: process.env.RESEND_FROM || "",
         },
       });
