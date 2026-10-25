@@ -10,7 +10,6 @@ import {
   Trash2,
   AlertTriangle,
   Award,
-  ExternalLink,
   Target,
   Users,
   CheckCircle2,
@@ -349,7 +348,7 @@ export function ContestLeaderboardView({
                         </span>
                       </td>
 
-                      {/* Candidate Name & Handle */}
+                      {/* Candidate Name */}
                       <td className="px-3.5 py-3">
                         <div className="flex items-center gap-1.5">
                           <span className="font-bold text-[var(--text)]">{row.displayName || "Participant"}</span>
@@ -364,19 +363,6 @@ export function ContestLeaderboardView({
                             </span>
                           )}
                         </div>
-                        {row.hackerRankHandle && (
-                          <div className="mt-0.5 flex items-center gap-1 text-[11px] text-[var(--muted)] font-mono">
-                            <a
-                              href={`https://www.hackerrank.com/${row.hackerRankHandle}`}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="inline-flex items-center gap-1 hover:text-[var(--accent)] hover:underline"
-                            >
-                              <span>@{row.hackerRankHandle}</span>
-                              <ExternalLink size={10} />
-                            </a>
-                          </div>
-                        )}
                       </td>
 
                       {/* Enrollment */}

@@ -162,12 +162,7 @@ export default function ContestPage() {
         }
 
         if (isPast) {
-          return (
-            <div className="profile-panel">
-              <span className="status-pill is-closed">Contest Ended</span>
-              <p className="panel-help">This contest has concluded.</p>
-            </div>
-          );
+          return null;
         }
 
         if (contest.registrationStatus === "SOON") {
