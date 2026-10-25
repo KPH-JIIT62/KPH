@@ -159,7 +159,7 @@ const teamMembers: TeamMember[] = [
     role: "Senior Advisor",
     category: "advisors",
     image: "/images/team/vedansh-goel.jpg",
-    objectPosition: "center center",
+    objectPosition: "center 48%",
     quote: "Mind your business",
     nameGradient: THEME_NAME_GRADIENT,
     specialty: "Strategic Mentorship",
