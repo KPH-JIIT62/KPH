@@ -57,7 +57,7 @@ function createAdminController(adminService) {
 
     async getCertificatePdf(req, res) {
       const { filename } = req.params;
-      const filePath = adminService.getCertificatePdfPath(filename);
+      const filePath = await adminService.getCertificatePdfPath(filename);
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `inline; filename="${encodeURIComponent(filename)}"`);
       res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
