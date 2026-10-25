@@ -2007,7 +2007,7 @@ export default function AdminPage() {
                   <h3 className="text-sm font-bold text-[var(--text)]">2. Upload Leaderboard (JSON)</h3>
                 </div>
                 <p className="mb-2 text-xs text-[var(--text-secondary)]">
-                  Upload a HackerRank/Contest leaderboard JSON export:
+                  Upload a Contest leaderboard JSON export:
                 </p>
 
                 <label
@@ -2376,7 +2376,7 @@ export default function AdminPage() {
                       ) : !selectedContestSlug ? (
                         <tr>
                           <td colSpan={10} className="px-4 py-12 text-center text-amber-500 font-medium">
-                            Please select a contest from dropdown (1. Select Contest) first to view, generate, or publish leaderboard certificates.
+                            Please select a contest from dropdown .
                           </td>
                         </tr>
                       ) : (
