@@ -153,6 +153,18 @@ const teamMembers: TeamMember[] = [
     specialty: "Competitive Programming & Strategic Mentorship",
     linkedin: "https://www.linkedin.com/in/anshpandey18",
   },
+  {
+    id: "vedansh-goel",
+    name: "Vedansh Goel",
+    role: "Senior Advisor",
+    category: "advisors",
+    image: "/images/team/vedansh-goel.jpg",
+    objectPosition: "center center",
+    quote: "Mind your business",
+    nameGradient: THEME_NAME_GRADIENT,
+    specialty: "Strategic Mentorship",
+    linkedin: "https://www.linkedin.com/in/vedansh-goel-389540224/",
+  },
 
   // Coordinators
   {
@@ -250,6 +262,31 @@ const teamMembers: TeamMember[] = [
     specialty: "Event Management & Operations",
     linkedin: "https://www.linkedin.com/in/anutyagi/",
   },
+  {
+    id: "ananya-tiwari",
+    name: "Ananya Tiwari",
+    role: "Coordinator",
+    category: "coordinators",
+    image: "/images/team/ananya-tiwari.png",
+    objectPosition: "center 20%",
+    quote: "ice creams.",
+    nameGradient: THEME_NAME_GRADIENT,
+    specialty: "Problem Solving & Tech Operations",
+    linkedin: "https://www.linkedin.com/in/ananya-tiwari-5bb845317",
+  },
+  {
+    id: "prakhar-arora",
+    name: "Prakhar Arora",
+    role: "Coordinator",
+    category: "coordinators",
+    image: "/images/team/prakhar-arora.png",
+    objectPosition: "center 20%",
+    quote: "it's not that deep.",
+    nameGradient: THEME_NAME_GRADIENT,
+    specialty: "Problem Solving & Tech Operations",
+    linkedin: "https://www.linkedin.com/in/prakhar-arora-knp",
+  },
+
 
   // Volunteers
   {
