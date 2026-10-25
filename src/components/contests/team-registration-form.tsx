@@ -30,6 +30,7 @@ export function TeamRegistrationForm({ account, contest, onSubmit }: Props) {
   const maxTeamSize = Math.max(1, Math.min(6, contest.maxTeamSize ?? 3));
   const minTeamSize = Math.max(1, Math.min(maxTeamSize, contest.minTeamSize ?? 1));
   const maxAdditionalMembers = maxTeamSize - 1; // Leader is 1
+  const hackerrankRequired = contest.slug === "execute-26-4" || contest.hackerrankRequired;
 
   const [members, setMembers] = useState<(Member | null)[]>([]);
   const [lookups, setLookups] = useState<string[]>([]);
@@ -132,6 +133,11 @@ export function TeamRegistrationForm({ account, contest, onSubmit }: Props) {
       setSubmitting(false);
       return;
     }
+    if (hackerrankRequired && !hackerrankHandle.trim()) {
+      setErrors({ hackerrankHandle: "Team HackerRank ID is required." });
+      setSubmitting(false);
+      return;
+    }
 
     try {
       await onSubmit({
@@ -158,13 +164,8 @@ export function TeamRegistrationForm({ account, contest, onSubmit }: Props) {
       <div className="flex items-center justify-between rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] p-3.5 text-xs">
         <div className="flex items-center gap-2 font-semibold text-[var(--text)]">
           <Users size={16} className="text-[var(--accent)]" />
-          <span>Team Size: <strong>{selectedCount}</strong> / {maxTeamSize} max members</span>
+          <span>Minimum Team Size {minTeamSize} | Maximum Team Size {maxTeamSize}</span>
         </div>
-        <span className="text-[var(--text-secondary)]">
-          {minTeamSize === maxTeamSize
-            ? `Exact team size: ${maxTeamSize}`
-            : `Allowed: ${minTeamSize} to ${maxTeamSize} members`}
-        </span>
       </div>
 
       {/* Team Leader (Current User) */}
@@ -316,12 +317,14 @@ export function TeamRegistrationForm({ account, contest, onSubmit }: Props) {
           <label htmlFor="hackerrankHandle" className="flex items-center gap-1 font-semibold text-xs text-[var(--text)]">
             <PlatformIcon platform="hackerrank" size={14} />
             <span>Team / Leader HackerRank ID</span>
-            {!contest.hackerrankRequired && <span className="text-[var(--muted)] font-normal">(optional)</span>}
+            {hackerrankRequired && <span className="text-rose-500">*</span>}
           </label>
           <input
             id="hackerrankHandle"
             value={hackerrankHandle}
-            maxLength={80}
+            maxLength={40}
+            required={hackerrankRequired}
+            aria-invalid={Boolean(errors.hackerrankHandle)}
             placeholder="Type HackerRank username"
             onChange={(e) => setHackerrankHandle(e.target.value)}
             className="w-full rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs text-[var(--text)]"
@@ -337,7 +340,7 @@ export function TeamRegistrationForm({ account, contest, onSubmit }: Props) {
         <button
           type="submit"
           className="button button-primary"
-          disabled={submitting || !ready || (contest.teamNameRequired !== false && !teamName.trim())}
+          disabled={submitting || !ready || (contest.teamNameRequired !== false && !teamName.trim()) || (hackerrankRequired && !hackerrankHandle.trim())}
         >
           {submitting ? "Registering team…" : `Register Team (${selectedCount} members)`}
         </button>

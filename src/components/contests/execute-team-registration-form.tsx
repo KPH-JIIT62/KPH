@@ -39,7 +39,18 @@ export function ExecuteTeamRegistrationForm({ account, onSubmit }: Props) {
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setSubmitting(true); setErrors({}); setFormError("");
-    try { await onSubmit({ teamName: teamName.trim(), hackerrankHandle: hackerrankHandle.trim(), memberIds: selected.flatMap((m) => m ? [m.id] : []) }); }
+    const handle = hackerrankHandle.trim();
+    if (!handle) {
+      setErrors({ hackerrankHandle: "Enter your HackerRank ID to register your team." });
+      setSubmitting(false);
+      return;
+    }
+    if (!/^[A-Za-z0-9_.-]{1,40}$/.test(handle)) {
+      setErrors({ hackerrankHandle: "Use up to 40 letters, numbers, dots, underscores, or hyphens." });
+      setSubmitting(false);
+      return;
+    }
+    try { await onSubmit({ teamName: teamName.trim(), hackerrankHandle: handle, memberIds: selected.flatMap((m) => m ? [m.id] : []) }); }
     catch (error) { if (error instanceof ApiError && error.fields) setErrors(error.fields); else setFormError(error instanceof ApiError ? error.message : "Something went wrong. Please try again."); }
     finally { setSubmitting(false); }
   }
@@ -60,7 +71,7 @@ export function ExecuteTeamRegistrationForm({ account, onSubmit }: Props) {
       {lookupError[index] && <p className="form-error" role="alert">{lookupError[index]}</p>}
     </div>)}
     <div className="profile-field"><label htmlFor="execute-team-name">Team Name</label><input id="execute-team-name" value={teamName} maxLength={80} onChange={(e) => setTeamName(e.target.value)} />{errors.teamName && <p className="form-error">{errors.teamName}</p>}</div>
-    <div className="profile-field"><label htmlFor="execute-hackerrank">Team HackerRank ID</label><input id="execute-hackerrank" value={hackerrankHandle} maxLength={80} onChange={(e) => setHackerrankHandle(e.target.value)} />{errors.hackerrankHandle && <p className="form-error">{errors.hackerrankHandle}</p>}</div>
+    {profile.hackerrankHandle?.trim() ? <LockedField id="execute-hackerrank" label="Team Leader’s HackerRank ID" value={profile.hackerrankHandle} /> : <div className="profile-field"><label htmlFor="execute-hackerrank">Team Leader’s HackerRank ID <span>(required)</span></label><input id="execute-hackerrank" value={hackerrankHandle} maxLength={40} autoComplete="off" aria-invalid={Boolean(errors.hackerrankHandle)} aria-describedby={errors.hackerrankHandle ? "execute-hackerrank-error" : undefined} onChange={(e) => setHackerrankHandle(e.target.value)} />{errors.hackerrankHandle && <p id="execute-hackerrank-error" className="form-error">{errors.hackerrankHandle}</p>}<p className="panel-help">This ID will also be saved to your KPH profile for future use.</p></div>}
     {errors.members && <p className="form-error">{errors.members}</p>}
     <div className="form-footer"><button type="submit" className="button button-primary" disabled={submitting || !ready}>{submitting ? "Registering team…" : "Register Team"}</button><p className="form-message form-error" role="status">{formError}</p></div>
   </form>;

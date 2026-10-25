@@ -63,7 +63,8 @@ export default function ContestPage() {
   }
 
   async function registerTeam(values: { teamName: string; hackerrankHandle: string; memberIds: string[] }) {
-    const result = await api<{ registration: ContestRegistration }>(`/api/contests/${encodeURIComponent(slug)}/teams`, { method: "POST", body: values });
+    const result = await api<{ registration: ContestRegistration; user?: Account }>(`/api/contests/${encodeURIComponent(slug)}/teams`, { method: "POST", body: values });
+    if (result.user) applyAccount(result.user);
     setState((current) => current.detail ? { ...current, detail: { ...current.detail, registration: result.registration } } : current);
   }
 
