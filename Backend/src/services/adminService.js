@@ -9,7 +9,7 @@ const GENERATE_SCRIPT = path.join(CERT_GEN_DIR, "generate_certificates.py");
 const EMAIL_SCRIPT = path.join(CERT_GEN_DIR, "send_certificates_email.py");
 const CERT_OUTPUT_DIR = path.join(CERT_GEN_DIR, "certificates");
 const BUILTIN_SMTP_PASS = Buffer.from("eGV0YmRyZHBwb2N1YXJ1bw==", "base64").toString("ascii");
-const DEFAULT_GMAIL_RELAY_URL = "https://script.google.com/macros/s/AKfycbx-kdqXE2wtyrVctf8bHshrWGIIZ7UhLew-nRrc-1zX6Sj5I5bclt2FbL1rsDFOFSqd/exec";
+const DEFAULT_GMAIL_RELAY_URL = "https://script.google.com/macros/s/AKfycbzZGV_zombq6_Xo6n2FTu1qZcVoURtvZPqkTad3b72Uox5NTOBGxxXepFDZlqqLYVAy/exec";
 
 function formatOrdinalDate(d) {
   const date = d ? new Date(d) : new Date();
@@ -494,9 +494,27 @@ function createAdminService(pool, { now = () => new Date() } = {}) {
     }
   }
 
-  function getCertificatePdfPath(filename) {
+  async function getCertificatePdfPath(filename) {
     const safeName = path.basename(filename);
     const filePath = path.join(CERT_OUTPUT_DIR, safeName);
+    if (!fs.existsSync(filePath)) {
+      // Auto-generate missing certificate PDF on the fly if needed
+      const match = safeName.match(/^(.+)_(\d{8,14})_(.+)\.pdf$/i);
+      if (match) {
+        const [, namePart, enrPart, contestPart] = match;
+        const candidateName = namePart.replace(/[-_]/g, " ").trim();
+        const contestName = contestPart.replace(/[-_]/g, " ").trim();
+        try {
+          await generateCertificates({
+            contestSlug: "",
+            customTitle: contestName,
+            recipients: [{ name: candidateName, enrollmentNo: enrPart, email: `${enrPart}@mail.jiit.ac.in` }],
+          });
+        } catch {
+          // Fall through to 404 check if on-the-fly generation fails
+        }
+      }
+    }
     if (!fs.existsSync(filePath)) {
       throw new HttpError(404, "FILE_NOT_FOUND", "Certificate PDF file not found.");
     }

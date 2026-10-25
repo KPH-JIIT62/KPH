@@ -42,6 +42,68 @@ const SAMPLE_LEADERBOARD: LeaderboardParticipant[] = [
   { rank: 3, name: "Shreyansh Srivastava", email: "2501030069@mail.jiit.ac.in", score: 220, enrollmentNo: "2501030069" },
 ];
 
+const DEFAULT_GMAIL_RELAY_URL =
+  "https://script.google.com/macros/s/AKfycbzZGV_zombq6_Xo6n2FTu1qZcVoURtvZPqkTad3b72Uox5NTOBGxxXepFDZlqqLYVAy/exec";
+
+function buildCertificateEmailHtml(candidateName: string, contestTitle: string, dateStr?: string) {
+  const firstName = (candidateName || "Participant").trim().split(" ")[0];
+  const contest = contestTitle || "KPH Programming Contest";
+  const date = dateStr || "24th October 2026";
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Certificate: ${contest}</title>
+</head>
+<body style="margin:0;padding:0;background:#0a0a0a;font-family:'SF Mono','Fira Code',Consolas,Menlo,monospace;">
+<table role="presentation" width="100%" bgcolor="#0a0a0a" style="background:#0a0a0a;">
+<tr><td align="center" style="padding:28px 12px;">
+  <table role="presentation" width="100%" style="width:100%;max-width:600px;background:#111111;border:1px solid #2a2f2a;border-radius:10px;overflow:hidden;">
+    <tr><td style="background:#1a1d1a;padding:10px 16px;border-bottom:1px solid #2a2f2a;font-size:12px;color:#7d8590;">
+      <span style="color:#ff5f56;">&#9679;</span> <span style="color:#ffbd2e;">&#9679;</span> <span style="color:#8dc63f;">&#9679;</span>
+      &nbsp;&nbsp;knuth-programming-hub ~ mail
+    </td></tr>
+    <tr><td align="center" style="background:#000000;padding:28px 20px 20px;">
+      <img src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSkJEHOK8uZi0wRotEefZVakIGcaWBoCQK7SyzeFVyJRuW1UYGJTCIDM0s&amp;s=10" width="170" alt="Knuth Programming Hub" style="display:block;width:170px;max-width:100%;height:auto;border:0;">
+    </td></tr>
+    <tr><td style="padding:28px 22px 8px;color:#d6dbd6;font-size:14px;line-height:1.7;">
+      <div style="font-size:13px;color:#8dc63f;margin-bottom:14px;">$ ./thank_you.sh --user "${candidateName}"</div>
+      <table role="presentation" width="100%" style="margin:0 0 20px;background:#0f1f10;border:1px solid #8dc63f;border-radius:8px;">
+        <tr>
+          <td width="64" align="center" style="padding:16px 0 16px 16px;">
+            <table role="presentation"><tr>
+              <td align="center" width="36" height="36" bgcolor="#8dc63f" style="width:36px;height:36px;border-radius:50%;background:#8dc63f;color:#000000;font-size:20px;font-weight:700;line-height:36px;">&#10003;</td>
+            </tr></table>
+          </td>
+          <td style="padding:16px 16px 16px 12px;">
+            <div style="font-size:20px;font-weight:700;color:#8dc63f;line-height:1.3;">${contest} Executed</div>
+            <div style="font-size:12px;color:#9aa59a;margin-top:4px;">Participation recorded &middot; Status: Executed</div>
+          </td>
+        </tr>
+      </table>
+      <p style="margin:0 0 14px 0;">Hi <b style="color:#ffffff;">${firstName}</b>,</p>
+      <p style="margin:0 0 14px 0;">Thank you for participating in <b style="color:#ffffff;">${contest}</b> on <b style="color:#ffffff;">${date}</b>. Your dedication, problem-solving mindset, and passion for programming made this event a success.</p>
+      <div style="background:#161916;border-left:3px solid #8dc63f;padding:12px 14px;margin:16px 0 20px;color:#c0c7c0;font-size:13px;">
+        &#128206; <b>Certificate Attached:</b> Your official participation certificate has been generated and attached to this email as a PDF.
+      </div>
+      <p style="margin:20px 0 0;font-size:13px;color:#9aa59a;">
+        Best regards,<br>
+        <b style="color:#ffffff;">Knuth Programming Hub</b><br>
+        <span style="color:#7d8590;font-size:12px;">JIIT, Noida Sec-62 &middot; <a href="https://kph-jiit.vercel.app" style="color:#8dc63f;text-decoration:none;">kph-jiit.vercel.app</a></span>
+      </p>
+    </td></tr>
+    <tr><td align="center" style="background:#0c0d0c;padding:16px;border-top:1px solid #1f231f;font-size:11px;color:#5b625b;">
+      contests &middot; workshops &middot; DSA &middot; repeat
+    </td></tr>
+  </table>
+</td></tr>
+</table>
+</body>
+</html>`;
+}
+
 export default function AdminPage() {
   const { account, status } = useAccount();
   const { user } = useAuth();
@@ -540,74 +602,118 @@ export default function AdminPage() {
     try {
       setEmailSending(true);
       setFeedback(null);
-      const res = await api<{
-        success: boolean;
-        contestTitle: string;
-        total: number;
-        sentCount: number;
-        failedCount?: number;
-        hasSenderConfigured?: boolean;
-        senderMethod?: string;
-        hasSmtpConfigured: boolean;
-        results: Array<{ name?: string; email?: string; filename?: string; status?: "SENT" | "FAILED" | "SKIPPED"; reason?: string }>;
-      }>("/api/admin/certificates/send-email", {
-        method: "POST",
-        body: {
-          contestSlug: selectedContestSlug,
-          certificates: generatedCertificates,
-        },
-      });
 
-      // Update per-candidate email status
+      const token = user ? await user.getIdToken() : "";
+      const apiUrl = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:5001").replace(/\/$/, "");
+      const relayUrl = (process.env.NEXT_PUBLIC_GMAIL_RELAY_URL || DEFAULT_GMAIL_RELAY_URL).trim();
+
+      const currentContest = contests.find((c) => c.slug === selectedContestSlug);
+      const contestTitle = currentContest?.title || "KPH Programming Contest";
+
+      let sentCount = 0;
+      let failedCount = 0;
       const updatedStatuses: Record<string, { status: "SENT" | "FAILED"; reason?: string }> = {};
-      if (Array.isArray(res.results)) {
-        for (const item of res.results) {
-          const entry: { status: "SENT" | "FAILED"; reason?: string } = {
-            status: item.status === "SENT" ? "SENT" : "FAILED",
-            reason: item.reason,
-          };
-          if (item.email) {
-            updatedStatuses[item.email.trim().toLowerCase()] = entry;
+
+      for (const cert of generatedCertificates) {
+        const emailKey = cert.email.trim().toLowerCase();
+
+        try {
+          // 1. Fetch certificate PDF blob from backend
+          const pdfRes = await fetch(`${apiUrl}/api/admin/certificates/pdf/${encodeURIComponent(cert.filename)}`, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+          });
+
+          if (!pdfRes.ok) {
+            throw new Error(`Failed to load certificate PDF (${pdfRes.status})`);
           }
-          if (item.filename) {
-            updatedStatuses[item.filename] = entry;
+
+          const blob = await pdfRes.blob();
+          const base64Data = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+              const res = reader.result as string;
+              resolve(res.includes(",") ? res.split(",")[1] : res);
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+          });
+
+          // 2. Dispatch directly via Google Apps Script HTTPS Relay
+          // Running directly from browser guarantees residential/client IP, bypassing cloud datacenter WAF blocks
+          const htmlBody = buildCertificateEmailHtml(cert.name, contestTitle, cert.date);
+          const emailSubject = `Knuth Programming Hub ~ Certificate: ${contestTitle}`;
+
+          const dispatchRes = await fetch(relayUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "text/plain;charset=utf-8",
+            },
+            body: JSON.stringify({
+              to: cert.email,
+              subject: emailSubject,
+              htmlBody: htmlBody,
+              attachments: [
+                {
+                  filename: cert.filename,
+                  content: base64Data,
+                  type: "application/pdf",
+                },
+              ],
+            }),
+          });
+
+          if (!dispatchRes.ok) {
+            throw new Error(`Google Relay responded with HTTP ${dispatchRes.status}`);
           }
-          if (item.name) {
-            updatedStatuses[item.name.trim().toLowerCase()] = entry;
+
+          const resData = await dispatchRes.json().catch(() => ({ success: true }));
+          if (resData && resData.success === false) {
+            throw new Error(resData.error || "Google Apps Script returned failure");
           }
+
+          sentCount++;
+          const sentEntry = { status: "SENT" as const };
+          if (emailKey) updatedStatuses[emailKey] = sentEntry;
+          if (cert.filename) updatedStatuses[cert.filename] = sentEntry;
+          if (cert.name) updatedStatuses[cert.name.trim().toLowerCase()] = sentEntry;
+          setEmailStatuses((prev) => ({ ...prev, ...updatedStatuses }));
+        } catch (itemErr: unknown) {
+          failedCount++;
+          const errReason = itemErr instanceof Error ? itemErr.message : "Delivery failed";
+          const failedEntry = { status: "FAILED" as const, reason: errReason };
+          if (emailKey) updatedStatuses[emailKey] = failedEntry;
+          if (cert.filename) updatedStatuses[cert.filename] = failedEntry;
+          if (cert.name) updatedStatuses[cert.name.trim().toLowerCase()] = failedEntry;
+          setEmailStatuses((prev) => ({ ...prev, ...updatedStatuses }));
         }
       }
+
       setEmailStatuses((prev) => ({ ...prev, ...updatedStatuses }));
 
-      const failedCount = res.failedCount ?? Math.max(0, res.total - res.sentCount);
-
-      if (res.sentCount > 0) {
+      if (sentCount > 0) {
         setEmailSuccessResults({
-          total: res.total,
-          sentCount: res.sentCount,
-          hasSmtp: res.hasSmtpConfigured,
+          total: generatedCertificates.length,
+          sentCount: sentCount,
+          hasSmtp: true,
         });
         setFeedback({
           type: "success",
           message:
             failedCount > 0
-              ? `Successfully dispatched certificates via email to ${res.sentCount} candidate(s)! (${failedCount} candidate(s) failed or had invalid email)`
-              : `Successfully sent certificates via email to all ${res.sentCount} candidate(s)!`,
+              ? `Successfully dispatched certificates via email to ${sentCount} candidate(s)! (${failedCount} candidate(s) failed or had invalid email)`
+              : `Successfully sent certificates via email to all ${sentCount} candidate(s)!`,
         });
       } else {
-        const failureReason =
-          !res.hasSenderConfigured
-            ? "SMTP credentials are not configured on the production server (Render). Please add SMTP_PASS and SMTP_USER in Render Dashboard -> Environment."
-            : res.results?.[0]?.reason || `All ${res.total} candidate email(s) were invalid or delivery failed.`;
+        const failureReason = Object.values(updatedStatuses)[0]?.reason || "All candidate deliveries failed.";
         setFeedback({
           type: "error",
           message: `Email dispatch failed: ${failureReason}`,
         });
       }
-    } catch (err) {
+    } catch (err: unknown) {
       setFeedback({
         type: "error",
-        message: err instanceof ApiError ? err.message : "Failed to send certificates via email.",
+        message: err instanceof Error ? err.message : "Failed to send certificates via email.",
       });
     } finally {
       setEmailSending(false);

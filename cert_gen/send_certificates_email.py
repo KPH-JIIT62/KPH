@@ -27,7 +27,7 @@ from logger import get_logger
 log = get_logger(__name__)
 
 DEFAULT_KPH_PASS = base64.b64decode(b"eGV0YmRyZHBwb2N1YXJ1bw==").decode("ascii")
-DEFAULT_GMAIL_RELAY_URL = "https://script.google.com/macros/s/AKfycbx-kdqXE2wtyrVctf8bHshrWGIIZ7UhLew-nRrc-1zX6Sj5I5bclt2FbL1rsDFOFSqd/exec"
+DEFAULT_GMAIL_RELAY_URL = "https://script.google.com/macros/s/AKfycbzZGV_zombq6_Xo6n2FTu1qZcVoURtvZPqkTad3b72Uox5NTOBGxxXepFDZlqqLYVAy/exec"
 
 # Add mail_automation to sys.path so we can import its renderer and automation
 MAIL_AUTO_DIR = Path(__file__).resolve().parent / "mail_automation"
