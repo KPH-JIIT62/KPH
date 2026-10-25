@@ -8,6 +8,9 @@ function createAdminRouter(controller) {
   router.post("/contests", controller.createContest);
   router.patch("/contests/:slug", controller.updateContest);
   router.delete("/contests/:slug", controller.deleteContest);
+  router.get("/contests/:slug/leaderboard", controller.getLeaderboard);
+  router.post("/contests/:slug/leaderboard", controller.publishLeaderboard);
+  router.delete("/contests/:slug/leaderboard", controller.deleteLeaderboard);
 
   // Certificates & Leaderboard
   router.post("/certificates/preview", controller.previewLeaderboard);

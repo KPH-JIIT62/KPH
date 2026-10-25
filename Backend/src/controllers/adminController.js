@@ -36,6 +36,25 @@ function createAdminController(adminService) {
       res.json(await adminService.previewLeaderboard(content));
     },
 
+    async publishLeaderboard(req, res) {
+      const { slug } = req.params;
+      const data = req.body?.data || req.body?.leaderboard || req.body;
+      if (!data) {
+        throw new HttpError(400, "MISSING_DATA", "Please provide leaderboard data.");
+      }
+      res.json(await adminService.publishLeaderboard(slug, data, req.user?.id));
+    },
+
+    async getLeaderboard(req, res) {
+      const { slug } = req.params;
+      res.json(await adminService.getLeaderboard(slug));
+    },
+
+    async deleteLeaderboard(req, res) {
+      const { slug } = req.params;
+      res.json(await adminService.deleteLeaderboard(slug));
+    },
+
     async generateCertificates(req, res) {
       const { contestSlug, customTitle, date, recipients } = req.body || {};
       res.json(await adminService.generateCertificates({

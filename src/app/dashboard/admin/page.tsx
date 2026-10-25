@@ -37,9 +37,9 @@ import type { AdminContest, LeaderboardParticipant, AdminAccessRecord, Generated
 type ActiveTab = "contests" | "certificates" | "access";
 
 const SAMPLE_LEADERBOARD: LeaderboardParticipant[] = [
-  { rank: 1, name: "Jayendra Pratap Singh", email: "2501030287@mail.jiit.ac.in", score: 300, enrollmentNo: "2501030287" },
-  { rank: 2, name: "Vaibhav Sharma", email: "2501030279@mail.jiit.ac.in", score: 275, enrollmentNo: "2501030279" },
-  { rank: 3, name: "Shreyansh Srivastava", email: "2501030069@mail.jiit.ac.in", score: 220, enrollmentNo: "2501030069" },
+  { rank: 1, name: "Jayendra Pratap Singh", email: "2501030287@mail.jiit.ac.in", score: 800, solved: 4, penalty: 59, enrollmentNo: "2501030287", branch: "CSE", batch: "B12", hackerRankHandle: "h2501030287" },
+  { rank: 2, name: "Vaibhav Sharma", email: "2501030279@mail.jiit.ac.in", score: 600, solved: 3, penalty: 45, enrollmentNo: "2501030279", branch: "CSE", batch: "B12", hackerRankHandle: "h2501030279" },
+  { rank: 3, name: "Shreyansh Srivastava", email: "2501030069@mail.jiit.ac.in", score: 400, solved: 2, penalty: 30, enrollmentNo: "2501030069", branch: "IT", batch: "B10", hackerRankHandle: "h2501030069" },
 ];
 
 const DEFAULT_GMAIL_RELAY_URL =
@@ -174,8 +174,16 @@ export default function AdminPage() {
   // Certificate / Leaderboard State
   const [selectedContestSlug, setSelectedContestSlug] = useState("");
   const [parsedLeaderboard, setParsedLeaderboard] = useState<LeaderboardParticipant[]>([]);
+  const [rawUploadedJson, setRawUploadedJson] = useState<unknown>(null);
   const [generatedCertificates, setGeneratedCertificates] = useState<GeneratedCertificate[]>([]);
   const [certGenerating, setCertGenerating] = useState(false);
+  const [leaderboardPublishing, setLeaderboardPublishing] = useState(false);
+  const [leaderboardDeleting, setLeaderboardDeleting] = useState(false);
+  const [publishedLeaderboardInfo, setPublishedLeaderboardInfo] = useState<{
+    exists: boolean;
+    totalParticipants?: number;
+    updatedAt?: string;
+  } | null>(null);
   const [emailSending, setEmailSending] = useState(false);
   const [emailConfirmModalOpen, setEmailConfirmModalOpen] = useState(false);
   const [emailSuccessResults, setEmailSuccessResults] = useState<{ total: number; sentCount: number; hasSmtp: boolean } | null>(null);
@@ -232,6 +240,27 @@ export default function AdminPage() {
       void loadData();
     }
   }, [account, loadData]);
+
+  // Check if a leaderboard is published whenever selectedContestSlug changes
+  useEffect(() => {
+    if (!selectedContestSlug) return;
+    let cancelled = false;
+    api<{ exists: boolean; leaderboard: any }>(`/api/admin/contests/${encodeURIComponent(selectedContestSlug)}/leaderboard`)
+      .then((res) => {
+        if (cancelled) return;
+        setPublishedLeaderboardInfo(
+          res.exists
+            ? { exists: true, totalParticipants: res.leaderboard?.totalParticipants, updatedAt: res.leaderboard?.updatedAt }
+            : { exists: false }
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setPublishedLeaderboardInfo({ exists: false });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [api, selectedContestSlug]);
 
   // Auto-dismiss success feedback after 5 seconds
   useEffect(() => {
@@ -521,9 +550,10 @@ export default function AdminPage() {
     try {
       setFeedback(null);
       const data = JSON.parse(content);
+      setRawUploadedJson(data);
       const rawList: Record<string, unknown>[] = Array.isArray(data)
         ? data
-        : data.leaderboard || data.standings || data.rows || data.models || data.results || [];
+        : (data.leaderboard || data.standings || data.rows || data.models || data.results || data.participants || []);
 
       if (!rawList.length) {
         throw new Error("No participant rows found in the uploaded JSON.");
@@ -531,16 +561,43 @@ export default function AdminPage() {
 
       const normalized: LeaderboardParticipant[] = rawList.map((item: Record<string, unknown>, idx: number) => {
         const rank = Number(item.rank ?? item.position ?? idx + 1);
-        const name = String(item.name ?? item.hacker ?? item.username ?? `Student #${rank}`).trim();
+        const name = String(item.displayName ?? item.name ?? item.hacker ?? item.username ?? `Student #${rank}`).trim();
+        const hackerRankHandle = String(item.hackerRankHandle ?? item.hacker ?? item.username ?? "").trim();
+        let enrollmentNo = String(item.enrollmentNo ?? item.enrollment_no ?? item.enrollment ?? "").trim();
+        if (!enrollmentNo && hackerRankHandle) {
+          const m = hackerRankHandle.match(/^h?(\d{8,12})$/i);
+          if (m) enrollmentNo = m[1];
+        }
         const email = String(item.email ?? item.gmail ?? "").trim().toLowerCase();
-        const enrollmentNo = String(item.enrollmentNo ?? item.enrollment_no ?? "").trim();
-        const score = typeof item.score === "number" ? item.score : typeof item.points === "number" ? item.points : 0;
+        const score = typeof item.score === "number" ? item.score : typeof item.points === "number" ? item.points : Number(item.score) || 0;
+        const branch = String(item.branch ?? "").trim();
+        const batch = String(item.batch ?? "").trim();
+        const campus = String(item.campus ?? "").trim();
+        const yearOfStudy = String(item.yearOfStudy ?? "").trim();
+        const solved = typeof item.solved === "number" ? item.solved : (Array.isArray(item.problems) ? item.problems.filter((p: any) => p?.solved).length : 0);
+        const penalty = typeof item.penalty === "number" ? item.penalty : 0;
+        const disqualified = Boolean(item.disqualified);
+        const registered = item.registered !== undefined ? Boolean(item.registered) : Boolean(enrollmentNo);
+        const problems = Array.isArray(item.problems) ? (item.problems as any[]) : [];
+
         return {
           rank,
           name,
+          displayName: name,
+          hackerRankHandle,
           email: email || (enrollmentNo ? `${enrollmentNo}@mail.jiit.ac.in` : ""),
           score,
           enrollmentNo,
+          branch,
+          batch,
+          campus,
+          yearOfStudy,
+          solved,
+          penalty,
+          disqualified,
+          registered,
+          problems,
+          raw: item,
         };
       }).sort((a, b) => a.rank - b.rank);
 
@@ -549,12 +606,74 @@ export default function AdminPage() {
     } catch (err: unknown) {
       setFeedback({ type: "error", message: `Invalid JSON format: ${err instanceof Error ? err.message : String(err)}` });
       setParsedLeaderboard([]);
+      setRawUploadedJson(null);
     }
   }
 
   function loadSampleLeaderboard() {
     const sample = JSON.stringify(SAMPLE_LEADERBOARD, null, 2);
     processJsonContent(sample);
+  }
+
+  async function handlePublishLeaderboard() {
+    if (!selectedContestSlug) {
+      setFeedback({ type: "error", message: "Please select a contest to publish leaderboard for." });
+      return;
+    }
+    if (!parsedLeaderboard.length) {
+      setFeedback({ type: "error", message: "Please upload or load a leaderboard before publishing." });
+      return;
+    }
+    try {
+      setLeaderboardPublishing(true);
+      setFeedback(null);
+      const res = await api<{ ok: boolean; slug: string; contestTitle: string; totalParticipants: number; updatedAt: string }>(
+        `/api/admin/contests/${encodeURIComponent(selectedContestSlug)}/leaderboard`,
+        {
+          method: "POST",
+          body: { data: rawUploadedJson || parsedLeaderboard },
+        }
+      );
+      setPublishedLeaderboardInfo({
+        exists: true,
+        totalParticipants: res.totalParticipants,
+        updatedAt: res.updatedAt,
+      });
+      setFeedback({
+        type: "success",
+        message: `Successfully posted official leaderboard for "${res.contestTitle}" (${res.totalParticipants} participants)! Live on contest page when ended.`,
+      });
+    } catch (err) {
+      setFeedback({
+        type: "error",
+        message: err instanceof ApiError ? err.message : "Failed to publish leaderboard.",
+      });
+    } finally {
+      setLeaderboardPublishing(false);
+    }
+  }
+
+  async function handleDeletePublishedLeaderboard() {
+    if (!selectedContestSlug) return;
+    try {
+      setLeaderboardDeleting(true);
+      setFeedback(null);
+      await api(`/api/admin/contests/${encodeURIComponent(selectedContestSlug)}/leaderboard`, {
+        method: "DELETE",
+      });
+      setPublishedLeaderboardInfo({ exists: false });
+      setFeedback({
+        type: "success",
+        message: `Leaderboard removed for contest ${selectedContestSlug}.`,
+      });
+    } catch (err) {
+      setFeedback({
+        type: "error",
+        message: err instanceof ApiError ? err.message : "Failed to delete leaderboard.",
+      });
+    } finally {
+      setLeaderboardDeleting(false);
+    }
   }
 
   async function handleGenerateCertificates() {
@@ -1884,7 +2003,7 @@ export default function AdminPage() {
                 </label>
               </div>
 
-              {/* Action Buttons: Separate Generate & Email Buttons */}
+              {/* Action Buttons: Generate Certs, Publish Leaderboard, & Email Dispatch */}
               <div className="space-y-2.5 pt-2">
                 <button
                   type="button"
@@ -1899,6 +2018,45 @@ export default function AdminPage() {
                       : `Generate Certificates (${parsedLeaderboard.length})`}
                   </span>
                 </button>
+
+                {/* Button below Generate Certificate for Posting/Publishing Leaderboard */}
+                <button
+                  type="button"
+                  onClick={handlePublishLeaderboard}
+                  disabled={leaderboardPublishing || parsedLeaderboard.length === 0}
+                  className="button button-secondary w-full border-[var(--accent)] text-[var(--accent)] hover:bg-[var(--accent)] hover:text-black font-semibold"
+                >
+                  <Trophy size={16} />
+                  <span>
+                    {leaderboardPublishing
+                      ? "Publishing Leaderboard..."
+                      : `Publish Contest Leaderboard (${parsedLeaderboard.length})`}
+                  </span>
+                </button>
+
+                {/* Published Leaderboard Status Pill & Quick Unpublish */}
+                {publishedLeaderboardInfo?.exists && (
+                  <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-2.5 text-xs text-emerald-800 dark:text-emerald-300">
+                    <div className="flex items-center justify-between">
+                      <span className="flex items-center gap-1.5 font-bold">
+                        <CheckCircle2 size={13} />
+                        Leaderboard Published ({publishedLeaderboardInfo.totalParticipants ?? 0} contestants)
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleDeletePublishedLeaderboard}
+                        disabled={leaderboardDeleting}
+                        className="text-[11px] font-semibold text-rose-500 hover:underline"
+                        title="Delete / Unpublish leaderboard"
+                      >
+                        {leaderboardDeleting ? "Deleting..." : "Unpublish"}
+                      </button>
+                    </div>
+                    <p className="mt-1 text-[10px] text-emerald-700/80 dark:text-emerald-300/80">
+                      Live on contest detail page when contest ends.
+                    </p>
+                  </div>
+                )}
 
                 <button
                   type="button"
@@ -1971,9 +2129,13 @@ export default function AdminPage() {
                   <table className="w-full text-left text-xs">
                     <thead className="sticky top-0 bg-[var(--surface-muted)] text-[var(--text-secondary)]">
                       <tr>
-                        <th className="px-3 py-2 font-semibold">Rank</th>
+                        <th className="px-3 py-2 font-semibold text-center w-12">Rank</th>
                         <th className="px-3 py-2 font-semibold">Candidate Name</th>
                         <th className="px-3 py-2 font-semibold">Enrollment</th>
+                        <th className="px-3 py-2 font-semibold">Batch / Branch</th>
+                        <th className="px-3 py-2 text-center font-semibold">Score</th>
+                        <th className="px-3 py-2 text-center font-semibold">Solved</th>
+                        <th className="px-3 py-2 text-center font-semibold">Penalty</th>
                         <th className="px-3 py-2 font-semibold">Email</th>
                         <th className="px-3 py-2 text-center font-semibold">Status</th>
                         <th className="px-3 py-2 text-right font-semibold">Actions</th>
@@ -1988,117 +2150,138 @@ export default function AdminPage() {
                               c.email.toLowerCase().includes(leaderboardSearch.toLowerCase()) ||
                               c.enrollmentNo.toLowerCase().includes(leaderboardSearch.toLowerCase())
                           )
-                          .map((cert) => (
-                            <tr key={cert.filename} className="hover:bg-[var(--surface-hover)]">
-                              <td className="px-3 py-2.5">
-                                <span
-                                  className={`inline-flex size-6 items-center justify-center rounded-full text-[11px] font-bold ${
-                                    cert.rank === 1
-                                      ? "bg-amber-400 text-black font-extrabold shadow-sm"
-                                      : cert.rank === 2
-                                      ? "bg-slate-300 text-black font-bold"
-                                      : cert.rank === 3
-                                      ? "bg-amber-700 text-white font-bold"
-                                      : "bg-[var(--surface-muted)] text-[var(--text-secondary)]"
-                                  }`}
-                                >
-                                  {cert.rank}
-                                </span>
-                              </td>
-                              <td className="px-3 py-2.5 font-semibold text-[var(--text)]">{cert.name}</td>
-                              <td className="px-3 py-2.5 font-mono text-[11px] text-[var(--muted)]">
-                                {cert.enrollmentNo || "—"}
-                              </td>
-                              <td className="px-3 py-2.5 font-mono text-[11px] text-[var(--muted)]">
-                                {cert.email || <span className="italic">Not specified</span>}
-                              </td>
-                              <td className="px-3 py-2.5 text-center">
-                                <div className="inline-flex items-center justify-center gap-1.5">
-                                  {/* Certificate Generated Tick */}
+                          .map((cert) => {
+                            const pMatch = parsedLeaderboard.find((p) => p.name === cert.name || (p.enrollmentNo && p.enrollmentNo === cert.enrollmentNo));
+                            return (
+                              <tr key={cert.filename} className="hover:bg-[var(--surface-hover)]">
+                                <td className="px-3 py-2.5 text-center">
                                   <span
-                                    className="inline-flex size-6 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
-                                    title="Certificate PDF generated"
-                                    aria-label="Certificate PDF generated"
+                                    className={`inline-flex size-6 items-center justify-center rounded-full text-[11px] font-bold ${
+                                      cert.rank === 1
+                                        ? "bg-amber-400 text-black font-extrabold shadow-sm"
+                                        : cert.rank === 2
+                                        ? "bg-slate-300 text-black font-bold"
+                                        : cert.rank === 3
+                                        ? "bg-amber-700 text-white font-bold"
+                                        : "bg-[var(--surface-muted)] text-[var(--text-secondary)]"
+                                    }`}
                                   >
-                                    <CheckCircle2 size={13} />
+                                    {cert.rank}
                                   </span>
+                                </td>
+                                <td className="px-3 py-2.5 font-semibold text-[var(--text)]">
+                                  <div>{cert.name}</div>
+                                  {pMatch?.hackerRankHandle && (
+                                    <span className="text-[10px] text-[var(--muted)] font-mono">@{pMatch.hackerRankHandle}</span>
+                                  )}
+                                </td>
+                                <td className="px-3 py-2.5 font-mono text-[11px] text-[var(--muted)]">
+                                  {cert.enrollmentNo || "—"}
+                                </td>
+                                <td className="px-3 py-2.5 text-[11px] text-[var(--muted)]">
+                                  {pMatch?.branch || pMatch?.batch ? `${pMatch?.batch || ""} ${pMatch?.branch ? `· ${pMatch.branch}` : ""}` : "—"}
+                                </td>
+                                <td className="px-3 py-2.5 text-center font-bold text-[#8dc63f]">
+                                  {cert.score ?? pMatch?.score ?? "—"}
+                                </td>
+                                <td className="px-3 py-2.5 text-center font-semibold text-emerald-500">
+                                  {pMatch?.solved ?? "—"}
+                                </td>
+                                <td className="px-3 py-2.5 text-center font-mono text-[11px] text-[var(--muted)]">
+                                  {pMatch?.penalty !== undefined ? `${pMatch.penalty}m` : "—"}
+                                </td>
+                                <td className="px-3 py-2.5 font-mono text-[11px] text-[var(--muted)]">
+                                  {cert.email || <span className="italic">Not specified</span>}
+                                </td>
+                                <td className="px-3 py-2.5 text-center">
+                                  <div className="inline-flex items-center justify-center gap-1.5">
+                                    {/* Certificate Generated Tick */}
+                                    <span
+                                      className="inline-flex size-6 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+                                      title="Certificate PDF generated"
+                                      aria-label="Certificate PDF generated"
+                                    >
+                                      <CheckCircle2 size={13} />
+                                    </span>
 
-                                  {/* Email Dispatch Status: Green Tick if Sent, Red Cross if Error/Failed */}
-                                  {(() => {
-                                    const emailKey = cert.email.trim().toLowerCase();
-                                    const statusInfo =
-                                      (emailKey ? emailStatuses[emailKey] : undefined) ||
-                                      (cert.filename ? emailStatuses[cert.filename] : undefined) ||
-                                      (cert.name ? emailStatuses[cert.name.trim().toLowerCase()] : undefined);
-                                    if (statusInfo?.status === "SENT") {
+                                    {/* Email Dispatch Status: Green Tick if Sent, Red Cross if Error/Failed */}
+                                    {(() => {
+                                      const emailKey = cert.email.trim().toLowerCase();
+                                      const statusInfo =
+                                        (emailKey ? emailStatuses[emailKey] : undefined) ||
+                                        (cert.filename ? emailStatuses[cert.filename] : undefined) ||
+                                        (cert.name ? emailStatuses[cert.name.trim().toLowerCase()] : undefined);
+                                      if (statusInfo?.status === "SENT") {
+                                        return (
+                                          <span
+                                            className="inline-flex size-6 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+                                            title="Certificate successfully sent to student email"
+                                            aria-label="Email Sent"
+                                          >
+                                            <CheckCircle2 size={13} />
+                                          </span>
+                                        );
+                                      }
+                                      if (statusInfo?.status === "FAILED") {
+                                        return (
+                                          <span
+                                            className="inline-flex size-6 items-center justify-center rounded-full bg-rose-500/15 text-rose-600 dark:text-rose-400"
+                                            title={statusInfo.reason || "Email dispatch failed / error"}
+                                            aria-label="Email Failed"
+                                          >
+                                            <XCircle size={13} />
+                                          </span>
+                                        );
+                                      }
                                       return (
                                         <span
-                                          className="inline-flex size-6 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
-                                          title="Certificate successfully sent to student email"
-                                          aria-label="Email Sent"
+                                          className="inline-flex size-6 items-center justify-center rounded-full bg-[var(--surface-muted)] text-[var(--muted)]"
+                                          title="Email not dispatched yet"
+                                          aria-label="Email Pending"
                                         >
-                                          <CheckCircle2 size={13} />
+                                          <Mail size={12} />
                                         </span>
                                       );
-                                    }
-                                    if (statusInfo?.status === "FAILED") {
-                                      return (
-                                        <span
-                                          className="inline-flex size-6 items-center justify-center rounded-full bg-rose-500/15 text-rose-600 dark:text-rose-400"
-                                          title={statusInfo.reason || "Email dispatch failed / error"}
-                                          aria-label="Email Failed"
-                                        >
-                                          <XCircle size={13} />
-                                        </span>
-                                      );
-                                    }
-                                    return (
-                                      <span
-                                        className="inline-flex size-6 items-center justify-center rounded-full bg-[var(--surface-muted)] text-[var(--muted)]"
-                                        title="Email not dispatched yet"
-                                        aria-label="Email Pending"
-                                      >
-                                        <Mail size={12} />
-                                      </span>
-                                    );
-                                  })()}
-                                </div>
-                              </td>
-                              <td className="px-3 py-2.5 text-right">
-                                <div className="flex items-center justify-end gap-1.5">
-                                  <button
-                                    type="button"
-                                    onClick={() => handlePreviewPdf(cert)}
-                                    className="inline-flex size-7 items-center justify-center rounded-md border border-[var(--border)] bg-[var(--surface)] text-[var(--accent)] shadow-sm transition-colors hover:bg-[var(--surface-muted)] hover:border-[var(--accent)]"
-                                    title="Preview Certificate"
-                                    aria-label="Preview Certificate"
-                                  >
-                                    <Eye size={14} />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => setCandidateToDelete({ filename: cert.filename, name: cert.name })}
-                                    className="inline-flex size-7 items-center justify-center rounded-md border border-rose-500/30 bg-[var(--surface)] text-rose-500 shadow-sm transition-colors hover:bg-rose-500/10 hover:border-rose-500"
-                                    title="Delete Candidate"
-                                    aria-label="Delete Candidate"
-                                  >
-                                    <Trash2 size={14} />
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          ))
+                                    })()}
+                                  </div>
+                                </td>
+                                <td className="px-3 py-2.5 text-right">
+                                  <div className="flex items-center justify-end gap-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => handlePreviewPdf(cert)}
+                                      className="inline-flex size-7 items-center justify-center rounded-md border border-[var(--border)] bg-[var(--surface)] text-[var(--accent)] shadow-sm transition-colors hover:bg-[var(--surface-muted)] hover:border-[var(--accent)]"
+                                      title="Preview Certificate"
+                                      aria-label="Preview Certificate"
+                                    >
+                                      <Eye size={14} />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setCandidateToDelete({ filename: cert.filename, name: cert.name })}
+                                      className="inline-flex size-7 items-center justify-center rounded-md border border-rose-500/30 bg-[var(--surface)] text-rose-500 shadow-sm transition-colors hover:bg-rose-500/10 hover:border-rose-500"
+                                      title="Delete Candidate"
+                                      aria-label="Delete Candidate"
+                                    >
+                                      <Trash2 size={14} />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })
                       ) : parsedLeaderboard.length > 0 ? (
                         parsedLeaderboard
                           .filter(
                             (p) =>
                               p.name.toLowerCase().includes(leaderboardSearch.toLowerCase()) ||
                               p.email.toLowerCase().includes(leaderboardSearch.toLowerCase()) ||
-                              (p.enrollmentNo && p.enrollmentNo.toLowerCase().includes(leaderboardSearch.toLowerCase()))
+                              (p.enrollmentNo && p.enrollmentNo.toLowerCase().includes(leaderboardSearch.toLowerCase())) ||
+                              (p.hackerRankHandle && p.hackerRankHandle.toLowerCase().includes(leaderboardSearch.toLowerCase()))
                           )
                           .map((p, idx) => (
                             <tr key={p.rank} className="hover:bg-[var(--surface-hover)]">
-                              <td className="px-3 py-2.5">
+                              <td className="px-3 py-2.5 text-center">
                                 <span
                                   className={`inline-flex size-6 items-center justify-center rounded-full text-[11px] font-bold ${
                                     p.rank === 1
@@ -2113,9 +2296,26 @@ export default function AdminPage() {
                                   {p.rank}
                                 </span>
                               </td>
-                              <td className="px-3 py-2.5 font-semibold text-[var(--text)]">{p.name}</td>
+                              <td className="px-3 py-2.5 font-semibold text-[var(--text)]">
+                                <div>{p.name}</div>
+                                {p.hackerRankHandle && (
+                                  <span className="text-[10px] text-[var(--muted)] font-mono">@{p.hackerRankHandle}</span>
+                                )}
+                              </td>
                               <td className="px-3 py-2.5 font-mono text-[11px] text-[var(--muted)]">
                                 {p.enrollmentNo || "—"}
+                              </td>
+                              <td className="px-3 py-2.5 text-[11px] text-[var(--muted)]">
+                                {p.branch || p.batch ? `${p.batch || ""} ${p.branch ? `· ${p.branch}` : ""}` : "—"}
+                              </td>
+                              <td className="px-3 py-2.5 text-center font-bold text-[#8dc63f]">
+                                {p.score ?? 0}
+                              </td>
+                              <td className="px-3 py-2.5 text-center font-semibold text-emerald-500">
+                                {p.solved ?? "—"}
+                              </td>
+                              <td className="px-3 py-2.5 text-center font-mono text-[11px] text-[var(--muted)]">
+                                {p.penalty !== undefined ? `${p.penalty}m` : "—"}
                               </td>
                               <td className="px-3 py-2.5 font-mono text-[11px] text-[var(--muted)]">
                                 {p.email || <span className="italic">Not specified</span>}
@@ -2143,7 +2343,7 @@ export default function AdminPage() {
                           ))
                       ) : (
                         <tr>
-                          <td colSpan={6} className="px-4 py-12 text-center text-[var(--muted)]">
+                          <td colSpan={10} className="px-4 py-12 text-center text-[var(--muted)]">
                             No leaderboard records uploaded. Upload a JSON file or click &quot;Load Sample Data&quot; to begin.
                           </td>
                         </tr>

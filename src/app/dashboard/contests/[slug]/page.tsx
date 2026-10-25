@@ -10,6 +10,7 @@ import { ContestHighlights } from "@/components/contests/contest-highlights";
 import { ContestRegistrationForm, type RegistrationValues } from "@/components/contests/contest-registration-form";
 import { TeamRegistrationForm } from "@/components/contests/team-registration-form";
 import { WithdrawRegistration } from "@/components/contests/withdraw-registration";
+import { ContestLeaderboardView } from "@/components/contests/contest-leaderboard";
 import { ApiError } from "@/lib/api";
 import { useApi } from "@/lib/use-api";
 import { formatContestDate, formatContestWhen, formatRegistrationDeadline, formatRegistrationWindow, cleanVenue, isUpcoming } from "@/lib/contest-format";
@@ -90,6 +91,7 @@ export default function ContestPage() {
     );
 
   const { contest, registration } = state.detail;
+  const isPast = !isUpcoming(contest);
   return (
     <div className="section-page">
       {back}
@@ -122,7 +124,6 @@ export default function ContestPage() {
       </section>
 
       {(() => {
-        const isPast = !isUpcoming(contest);
         if (registration) {
           return (
             <div className="profile-panel">
@@ -198,6 +199,34 @@ export default function ContestPage() {
           </div>
         );
       })()}
+
+      {/* Official Leaderboard for Ended Contests */}
+      {isPast && state.detail.leaderboard && (
+        <ContestLeaderboardView
+          leaderboard={state.detail.leaderboard}
+          account={account}
+          isAdmin={account.role === "ADMIN"}
+          onDeleteLeaderboard={async () => {
+            await api(`/api/admin/contests/${encodeURIComponent(slug)}/leaderboard`, { method: "DELETE" });
+            setState((current) => (current.detail ? { ...current, detail: { ...current.detail, leaderboard: null } } : current));
+          }}
+        />
+      )}
+
+      {/* Admin Notice when no Leaderboard has been uploaded for a Past Contest */}
+      {isPast && !state.detail.leaderboard && account.role === "ADMIN" && (
+        <div className="mt-8 rounded-xl border border-dashed border-[var(--border)] bg-[var(--surface-muted)]/40 p-5 text-center">
+          <p className="text-xs text-[var(--text-secondary)]">
+            No official standings have been published yet for this concluded contest.
+          </p>
+          <Link
+            href="/dashboard/admin"
+            className="mt-2.5 inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-xs font-semibold text-[var(--accent)] shadow-sm hover:border-[var(--accent)]"
+          >
+            Upload Leaderboard JSON in Admin Center &rarr;
+          </Link>
+        </div>
+      )}
     </div>
   );
 }
