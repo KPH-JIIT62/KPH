@@ -1,18 +1,19 @@
 import Link from "next/link";
 import { ArrowRight, CalendarClock, Check, Hourglass, MapPin } from "lucide-react";
 import { ContestHighlights } from "@/components/contests/contest-highlights";
-import { contestBadge, formatContestWhen, formatRegistrationDeadline, formatRegistrationWindow, cleanVenue } from "@/lib/contest-format";
+import { contestBadge, isUpcoming, formatContestWhen, formatRegistrationDeadline, formatRegistrationWindow, cleanVenue } from "@/lib/contest-format";
 import type { ContestSummary } from "@/types/contest";
 
 const badgeIcon = (registered: boolean) => (registered ? <Check size={13} aria-hidden="true" /> : null);
 // Only worth showing while people can still register and have not yet.
-const showDeadline = (contest: ContestSummary) => contest.registrationStatus === "OPEN" && !contest.registration && contest.registrationClosesAt;
+const showDeadline = (contest: ContestSummary) => isUpcoming(contest) && contest.registrationStatus === "OPEN" && !contest.registration && contest.registrationClosesAt;
 
 // One contest as a card on the Contests page.
 export function ContestCard({ contest }: { contest: ContestSummary }) {
   const registered = Boolean(contest.registration);
   const badge = contestBadge(contest, registered);
   const venueDisplay = cleanVenue(contest.venue);
+  const isPast = !isUpcoming(contest);
   return (
     <Link href={`/dashboard/contests/${contest.slug}`} className="contest-card">
       <span className={`status-pill is-${badge.tone}`}>
@@ -39,7 +40,7 @@ export function ContestCard({ contest }: { contest: ContestSummary }) {
           {venueDisplay && <span className="contest-meta"><MapPin size={15} aria-hidden="true" /> Venue: {venueDisplay}</span>}
         </div>
         <span className="contest-card-cta">
-          {registered ? "View registration" : contest.registrationStatus === "OPEN" ? "View & register" : "View details"} <ArrowRight size={15} aria-hidden="true" />
+          {isPast ? "View details" : registered ? "View registration" : contest.registrationStatus === "OPEN" ? "View & register" : "View details"} <ArrowRight size={15} aria-hidden="true" />
         </span>
       </div>
     </Link>
@@ -52,6 +53,7 @@ export function ContestHighlight({ contest }: { contest: ContestSummary }) {
   const badge = contestBadge(contest, registered);
   const canRegister = contest.registrationStatus === "OPEN" && !registered;
   const venueDisplay = cleanVenue(contest.venue);
+  const isPast = !isUpcoming(contest);
   return (
     <section className="profile-panel contest-highlight" aria-label={contest.title}>
       <div className="contest-highlight-header">
@@ -79,7 +81,7 @@ export function ContestHighlight({ contest }: { contest: ContestSummary }) {
         </div>
       )}
       <Link href={`/dashboard/contests/${contest.slug}`} className={`button ${canRegister ? "button-primary" : "button-secondary"} contest-highlight-cta`}>
-        {canRegister ? "Register Now" : registered ? "View registration" : "View details"}
+        {isPast ? "View details" : canRegister ? "Register Now" : registered ? "View registration" : "View details"}
         <ArrowRight size={16} aria-hidden="true" />
       </Link>
     </section>

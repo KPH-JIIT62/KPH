@@ -24,10 +24,30 @@ export type AdminContest = {
 export type LeaderboardParticipant = {
   rank: number;
   name: string;
+  displayName?: string;
+  hackerRankHandle?: string;
   email: string;
   score: number | string;
   enrollmentNo?: string;
   college?: string;
+  branch?: string;
+  batch?: string;
+  campus?: string;
+  yearOfStudy?: string;
+  solved?: number;
+  penalty?: number;
+  disqualified?: boolean;
+  registered?: boolean;
+  problems?: Array<{
+    slug?: string;
+    name?: string;
+    maxScore?: number;
+    bestScore?: number;
+    solved?: boolean;
+    attempts?: number;
+    wrongAttempts?: number;
+    solveTimeMinutes?: number;
+  }>;
   raw?: Record<string, unknown>;
 };
 

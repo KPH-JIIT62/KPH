@@ -18,6 +18,10 @@ function createContestsController(contestService, userService) {
     async get(req, res) {
       res.json(await contestService.getForUser(slugOf(req), req.user.id));
     },
+    // GET /api/contests/:slug/leaderboard
+    async getLeaderboard(req, res) {
+      res.json(await contestService.getLeaderboard(slugOf(req)));
+    },
     async searchMember(req, res) {
       const slug = slugOf(req);
       res.json(await contestService.searchMember(req.user.id, slug, req.query.enrollmentNo));

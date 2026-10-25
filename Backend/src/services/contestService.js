@@ -65,14 +65,62 @@ function createContestService(pool, userService, { now = () => new Date() } = {}
   async function getForUser(slug, userId) {
     const { rows } = await pool.query("SELECT * FROM contests WHERE slug = $1", [slug]);
     if (!rows[0]) throw new HttpError(404, "CONTEST_NOT_FOUND", "Contest not found.");
-    const isTeam = rows[0].participation_type === "TEAM" || slug === EXECUTE;
+    const contestRow = rows[0];
+    const isTeam = contestRow.participation_type === "TEAM" || slug === EXECUTE;
+    let registration = null;
     if (isTeam) {
-      const reg = await pool.query(`SELECT t.*, tm.role FROM contest_team_members tm JOIN contest_teams t ON t.id=tm.team_id WHERE t.contest_id=$1 AND tm.user_id=$2 AND tm.active AND t.status='ACTIVE'`, [rows[0].id, userId]);
-      const registration = reg.rows[0] ? { ...toTeamRegistration(reg.rows[0]), role: reg.rows[0].role, members: await teamMembers(reg.rows[0].id) } : null;
-      return { contest: { ...toPublicContest(rows[0], now()), ...(slug === EXECUTE ? await mandatoryFor(userId) : {}) }, registration };
+      const reg = await pool.query(`SELECT t.*, tm.role FROM contest_team_members tm JOIN contest_teams t ON t.id=tm.team_id WHERE t.contest_id=$1 AND tm.user_id=$2 AND tm.active AND t.status='ACTIVE'`, [contestRow.id, userId]);
+      registration = reg.rows[0] ? { ...toTeamRegistration(reg.rows[0]), role: reg.rows[0].role, members: await teamMembers(reg.rows[0].id) } : null;
+    } else {
+      const reg = await pool.query("SELECT * FROM contest_registrations WHERE contest_id = $1 AND user_id = $2", [contestRow.id, userId]);
+      registration = reg.rows[0] ? toPublicRegistration(reg.rows[0]) : null;
     }
-    const reg = await pool.query("SELECT * FROM contest_registrations WHERE contest_id = $1 AND user_id = $2", [rows[0].id, userId]);
-    return { contest: toPublicContest(rows[0], now()), registration: reg.rows[0] ? toPublicRegistration(reg.rows[0]) : null };
+
+    // Query published leaderboard if exists
+    let leaderboard = null;
+    try {
+      const lbRes = await pool.query("SELECT data, total_participants, updated_at FROM contest_leaderboards WHERE contest_id = $1", [contestRow.id]);
+      if (lbRes.rows[0]) {
+        leaderboard = {
+          contestSlug: slug,
+          totalParticipants: lbRes.rows[0].total_participants,
+          updatedAt: lbRes.rows[0].updated_at,
+          ...lbRes.rows[0].data,
+        };
+      }
+    } catch {
+      // In case migration not applied yet
+      leaderboard = null;
+    }
+
+    return {
+      contest: {
+        ...toPublicContest(contestRow, now()),
+        ...(slug === EXECUTE ? await mandatoryFor(userId) : {}),
+      },
+      registration,
+      leaderboard,
+    };
+  }
+
+  async function getLeaderboard(slug) {
+    const { rows: contestRows } = await pool.query("SELECT id, title, slug FROM contests WHERE slug = $1", [slug]);
+    if (!contestRows[0]) throw new HttpError(404, "CONTEST_NOT_FOUND", "Contest not found.");
+    try {
+      const { rows } = await pool.query("SELECT data, total_participants, updated_at FROM contest_leaderboards WHERE contest_id = $1", [contestRows[0].id]);
+      if (!rows[0]) return { exists: false, leaderboard: null };
+      return {
+        exists: true,
+        leaderboard: {
+          contestSlug: slug,
+          totalParticipants: rows[0].total_participants,
+          updatedAt: rows[0].updated_at,
+          ...rows[0].data,
+        },
+      };
+    } catch {
+      return { exists: false, leaderboard: null };
+    }
   }
 
   async function mandatoryFor(userId) {
@@ -247,7 +295,7 @@ function createContestService(pool, userService, { now = () => new Date() } = {}
     await pool.query("DELETE FROM contest_registrations WHERE id = $1", [mine.id]);
   }
 
-  return { listForUser, getForUser, register, withdraw, searchMember, registerTeam };
+  return { listForUser, getForUser, getLeaderboard, register, withdraw, searchMember, registerTeam };
 }
 
 module.exports = { createContestService };

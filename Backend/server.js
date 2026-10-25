@@ -3,15 +3,26 @@ const { loadEnv } = require("./src/config/env");
 const { createPool } = require("./src/db/pool");
 const { createFirebaseVerifier } = require("./src/config/firebase");
 const { createApp } = require("./src/app");
+const { migrate } = require("./scripts/migrate");
 
 const env = loadEnv();
 const pool = createPool(env.databaseUrl, { ssl: env.databaseSsl, sslCaFile: env.databaseSslCaFile });
-const app = createApp({ env, pool, verifyToken: createFirebaseVerifier(env.firebaseProjectId) });
 
-const server = app.listen(env.port, () => console.log(`KPH API listening on http://localhost:${env.port}`));
+async function start() {
+  try {
+    await migrate(pool, (msg) => console.log(`[db-migration] ${msg}`));
+  } catch (err) {
+    console.warn(`[db-migration] Migration notice: ${err.message}`);
+  }
 
-function shutdown() {
-  server.close(() => pool.end().finally(() => process.exit(0)));
+  const app = createApp({ env, pool, verifyToken: createFirebaseVerifier(env.firebaseProjectId) });
+  const server = app.listen(env.port, () => console.log(`KPH API listening on http://localhost:${env.port}`));
+
+  function shutdown() {
+    server.close(() => pool.end().finally(() => process.exit(0)));
+  }
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
 }
-process.on("SIGINT", shutdown);
-process.on("SIGTERM", shutdown);
+
+start();

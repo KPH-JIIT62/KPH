@@ -202,10 +202,10 @@ function createAdminService(pool, { now = () => new Date() } = {}) {
     const prizePool = data.prizePool !== undefined ? (data.prizePool && String(data.prizePool).trim() ? String(data.prizePool).trim() : null) : contest.prize_pool;
     const goodies = data.goodies !== undefined ? (data.goodies && String(data.goodies).trim() ? String(data.goodies).trim() : null) : contest.goodies;
 
-    const startsAt = data.startsAt !== undefined ? (data.startsAt ? new Date(data.startsAt) : null) : contest.starts_at;
-    const endsAt = data.endsAt !== undefined ? (data.endsAt ? new Date(data.endsAt) : null) : contest.ends_at;
-    const registrationStartsAt = data.registrationStartsAt !== undefined ? (data.registrationStartsAt ? new Date(data.registrationStartsAt) : null) : contest.registration_starts_at;
-    const registrationClosesAt = data.registrationClosesAt !== undefined ? (data.registrationClosesAt ? new Date(data.registrationClosesAt) : null) : contest.registration_closes_at;
+    const startsAt = data.startsAt !== undefined && data.startsAt !== "" ? (data.startsAt ? new Date(data.startsAt) : null) : contest.starts_at;
+    const endsAt = data.endsAt !== undefined && data.endsAt !== "" ? (data.endsAt ? new Date(data.endsAt) : null) : contest.ends_at;
+    const registrationStartsAt = data.registrationStartsAt !== undefined && data.registrationStartsAt !== "" ? (data.registrationStartsAt ? new Date(data.registrationStartsAt) : null) : contest.registration_starts_at;
+    const registrationClosesAt = data.registrationClosesAt !== undefined && data.registrationClosesAt !== "" ? (data.registrationClosesAt ? new Date(data.registrationClosesAt) : null) : contest.registration_closes_at;
 
     if (startsAt && endsAt && endsAt <= startsAt) {
       throw new HttpError(400, "VALIDATION_ERROR", "End date must be after the start date.", { endsAt: "Must end after starting." });
@@ -258,13 +258,30 @@ function createAdminService(pool, { now = () => new Date() } = {}) {
     if (!rows.length) throw new HttpError(404, "NOT_FOUND", "Contest not found.");
     const contest = rows[0];
 
-    const { rows: regs } = await pool.query("SELECT count(*)::int AS count FROM contest_registrations WHERE contest_id = $1", [contest.id]);
-    if (regs[0].count > 0) {
-      throw new HttpError(409, "CONTEST_HAS_REGISTRATIONS", `Cannot delete contest "${contest.title}" because it already has ${regs[0].count} registered participant(s). Set status to CLOSED instead.`);
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      // 1. Delete team members of teams in this contest
+      await client.query(
+        `DELETE FROM contest_team_members 
+         WHERE team_id IN (SELECT id FROM contest_teams WHERE contest_id = $1)`,
+        [contest.id]
+      );
+      // 2. Delete teams in this contest
+      await client.query("DELETE FROM contest_teams WHERE contest_id = $1", [contest.id]);
+      // 3. Delete individual registrations in this contest
+      await client.query("DELETE FROM contest_registrations WHERE contest_id = $1", [contest.id]);
+      // 4. Delete the contest itself
+      await client.query("DELETE FROM contests WHERE id = $1", [contest.id]);
+      await client.query("COMMIT");
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    } finally {
+      client.release();
     }
 
-    await pool.query("DELETE FROM contests WHERE slug = $1", [slug]);
-    return { ok: true, deletedSlug: slug };
+    return { ok: true, deletedSlug: slug, title: contest.title };
   }
 
   // -------------------------------------------------------------
@@ -304,22 +321,149 @@ function createAdminService(pool, { now = () => new Date() } = {}) {
     // Normalize each record
     return rawList.map((item, index) => {
       const rank = Number(item.rank ?? item.Rank ?? item.position ?? item.pos ?? index + 1);
-      const name = String(item.name ?? item.Name ?? item.student_name ?? item.participantName ?? item.hacker ?? item.username ?? `Participant #${rank}`).trim();
+      const name = String(item.displayName ?? item.name ?? item.Name ?? item.student_name ?? item.participantName ?? item.hacker ?? item.username ?? `Participant #${rank}`).trim();
+      const hackerRankHandle = String(item.hackerRankHandle ?? item.hacker ?? item.username ?? "").trim();
+      let enrollmentNo = String(item.enrollmentNo ?? item.enrollment_no ?? item.enrollment ?? item.enrollmentNumber ?? "").trim();
+      if (!enrollmentNo && hackerRankHandle) {
+        const m = hackerRankHandle.match(/^h?(\d{8,12})$/i);
+        if (m) enrollmentNo = m[1];
+      }
       const score = item.score ?? item.Score ?? item.points ?? item.totalScore ?? 0;
       const email = String(item.email ?? item.Email ?? item.gmail ?? item.student_email ?? "").trim().toLowerCase();
-      const enrollmentNo = String(item.enrollmentNo ?? item.enrollment_no ?? item.enrollment ?? "").trim();
       const college = String(item.college ?? item.college_name ?? "JIIT").trim();
+      const branch = String(item.branch ?? "").trim();
+      const batch = String(item.batch ?? "").trim();
+      const campus = String(item.campus ?? "").trim();
+      const yearOfStudy = String(item.yearOfStudy ?? "").trim();
+      const solved = typeof item.solved === "number" ? item.solved : (Array.isArray(item.problems) ? item.problems.filter((p) => p && p.solved).length : 0);
+      const penalty = typeof item.penalty === "number" ? item.penalty : 0;
+      const disqualified = Boolean(item.disqualified);
+      const registered = item.registered !== undefined ? Boolean(item.registered) : Boolean(enrollmentNo);
+      const problems = Array.isArray(item.problems) ? item.problems : [];
 
       return {
         rank,
         name,
+        displayName: name,
+        hackerRankHandle,
         email: email || (enrollmentNo ? `${enrollmentNo}@mail.jiit.ac.in` : ""),
         score: typeof score === "number" ? score : Number(score) || 0,
         enrollmentNo,
         college,
+        branch,
+        batch,
+        campus,
+        yearOfStudy,
+        solved,
+        penalty,
+        disqualified,
+        registered,
+        problems,
         raw: item,
       };
     }).sort((a, b) => a.rank - b.rank);
+  }
+
+  async function publishLeaderboard(slug, inputData, adminUserId = null) {
+    const { rows: contestRows } = await pool.query("SELECT id, title, slug, starts_at, ends_at FROM contests WHERE slug = $1", [slug]);
+    const contest = contestRows[0];
+    if (!contest) {
+      throw new HttpError(404, "CONTEST_NOT_FOUND", "Contest not found.");
+    }
+
+    // Extract and normalize entries
+    const entries = parseLeaderboard(inputData);
+    if (!entries.length) {
+      throw new HttpError(400, "EMPTY_LEADERBOARD", "Leaderboard data contains no participants.");
+    }
+
+    // Extract problem definitions if available
+    let problems = [];
+    const firstWithProblems = entries.find((e) => Array.isArray(e.problems) && e.problems.length > 0);
+    if (firstWithProblems) {
+      problems = firstWithProblems.problems.map((p, idx) => ({
+        slug: p.slug || `problem-${idx + 1}`,
+        name: p.name || `Problem ${String.fromCharCode(65 + idx)}`,
+        maxScore: p.maxScore || 100,
+      }));
+    }
+
+    const highestScore = Math.max(...entries.map((e) => e.score));
+    const averageScore = Math.round(entries.reduce((acc, curr) => acc + curr.score, 0) / (entries.length || 1));
+    const totalSolved = entries.reduce((acc, curr) => acc + (curr.solved || 0), 0);
+    const winner = entries[0] ? { name: entries[0].name, score: entries[0].score, rank: 1 } : null;
+
+    const payload = {
+      contestSlug: slug,
+      contestTitle: contest.title,
+      totalParticipants: entries.length,
+      problems,
+      stats: {
+        highestScore,
+        averageScore,
+        totalSolved,
+        winner,
+      },
+      entries,
+    };
+
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const upsertQuery = `
+        INSERT INTO contest_leaderboards (contest_id, data, total_participants, published_by, updated_at)
+        VALUES ($1, $2, $3, $4, now())
+        ON CONFLICT (contest_id) DO UPDATE
+        SET data = EXCLUDED.data,
+            total_participants = EXCLUDED.total_participants,
+            published_by = EXCLUDED.published_by,
+            updated_at = now()
+        RETURNING id, updated_at;
+      `;
+      const res = await client.query(upsertQuery, [contest.id, JSON.stringify(payload), entries.length, adminUserId]);
+      await client.query("COMMIT");
+
+      return {
+        ok: true,
+        slug,
+        contestTitle: contest.title,
+        totalParticipants: entries.length,
+        updatedAt: res.rows[0].updated_at,
+      };
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  async function getLeaderboard(slug) {
+    const { rows: contestRows } = await pool.query("SELECT id, title, slug FROM contests WHERE slug = $1", [slug]);
+    if (!contestRows[0]) throw new HttpError(404, "CONTEST_NOT_FOUND", "Contest not found.");
+
+    const { rows } = await pool.query("SELECT data, total_participants, updated_at FROM contest_leaderboards WHERE contest_id = $1", [contestRows[0].id]);
+    if (!rows[0]) {
+      return { exists: false, leaderboard: null };
+    }
+
+    return {
+      exists: true,
+      leaderboard: {
+        contestSlug: slug,
+        totalParticipants: rows[0].total_participants,
+        updatedAt: rows[0].updated_at,
+        ...rows[0].data,
+      },
+    };
+  }
+
+  async function deleteLeaderboard(slug) {
+    const { rows: contestRows } = await pool.query("SELECT id, title FROM contests WHERE slug = $1", [slug]);
+    if (!contestRows[0]) throw new HttpError(404, "CONTEST_NOT_FOUND", "Contest not found.");
+
+    await pool.query("DELETE FROM contest_leaderboards WHERE contest_id = $1", [contestRows[0].id]);
+    return { ok: true, deletedSlug: slug, contestTitle: contestRows[0].title };
   }
 
   async function previewLeaderboard(input) {
@@ -644,6 +788,9 @@ function createAdminService(pool, { now = () => new Date() } = {}) {
     updateContest,
     deleteContest,
     previewLeaderboard,
+    publishLeaderboard,
+    getLeaderboard,
+    deleteLeaderboard,
     generateCertificates,
     sendCertificatesEmail,
     getCertificatePdfPath,

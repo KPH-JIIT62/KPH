@@ -38,5 +38,53 @@ export type Contest = {
   mandatory?: boolean;
 };
 
+export type LeaderboardProblem = {
+  slug?: string;
+  name?: string;
+  maxScore?: number;
+  bestScore?: number;
+  solved?: boolean;
+  attempts?: number;
+  wrongAttempts?: number;
+  solveTimeMinutes?: number;
+};
+
+export type LeaderboardEntry = {
+  rank: number;
+  displayName: string;
+  hackerRankHandle?: string;
+  registered?: boolean;
+  enrollmentNo?: string;
+  branch?: string;
+  batch?: string;
+  campus?: string;
+  yearOfStudy?: string;
+  score: number;
+  solved?: number;
+  penalty?: number;
+  disqualified?: boolean;
+  email?: string;
+  problems?: LeaderboardProblem[];
+};
+
+export type ContestLeaderboard = {
+  contestSlug: string;
+  contestTitle?: string;
+  updatedAt?: string;
+  totalParticipants: number;
+  problems?: Array<{ slug: string; name: string; maxScore: number }>;
+  stats?: {
+    highestScore?: number;
+    averageScore?: number;
+    totalSolved?: number;
+    winner?: { name: string; score: number; rank: number } | null;
+  };
+  entries: LeaderboardEntry[];
+};
+
 export type ContestSummary = Contest & { registration: ContestRegistration | null };
-export type ContestDetail = { contest: Contest; registration: ContestRegistration | null };
+export type ContestDetail = {
+  contest: Contest;
+  registration: ContestRegistration | null;
+  leaderboard?: ContestLeaderboard | null;
+};

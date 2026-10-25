@@ -316,8 +316,16 @@ def read_entries_from_json(json_source):
     for idx, item in enumerate(raw_list, start=1):
         if not isinstance(item, dict):
             continue
-        name = str(item.get("name") or item.get("Name") or item.get("student_name") or item.get("participantName") or item.get("hacker") or item.get("username") or f"Participant #{idx}").strip()
-        enrollment = str(item.get("enrollmentNo") or item.get("enrollment_no") or item.get("enrollment") or item.get("enrollmentNumber") or item.get("rank") or idx).strip()
+        name = str(item.get("displayName") or item.get("name") or item.get("Name") or item.get("student_name") or item.get("participantName") or item.get("hacker") or item.get("username") or f"Participant #{idx}").strip()
+        hacker_handle = str(item.get("hackerRankHandle") or item.get("hacker") or item.get("username") or "").strip()
+        enrollment = str(item.get("enrollmentNo") or item.get("enrollment_no") or item.get("enrollment") or item.get("enrollmentNumber") or "").strip()
+        if not enrollment and hacker_handle:
+            m = re.match(r"^h?(\d{8,12})$", hacker_handle, re.IGNORECASE)
+            if m:
+                enrollment = m.group(1)
+        if not enrollment:
+            enrollment = str(item.get("rank") or idx).strip()
+
         email = str(item.get("email") or item.get("Email") or item.get("gmail") or item.get("student_email") or "").strip().lower()
         score = item.get("score") or item.get("Score") or item.get("points") or 0
         rank = item.get("rank") or item.get("Rank") or idx

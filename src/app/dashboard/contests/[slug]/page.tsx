@@ -10,9 +10,10 @@ import { ContestHighlights } from "@/components/contests/contest-highlights";
 import { ContestRegistrationForm, type RegistrationValues } from "@/components/contests/contest-registration-form";
 import { TeamRegistrationForm } from "@/components/contests/team-registration-form";
 import { WithdrawRegistration } from "@/components/contests/withdraw-registration";
+import { ContestLeaderboardView } from "@/components/contests/contest-leaderboard";
 import { ApiError } from "@/lib/api";
 import { useApi } from "@/lib/use-api";
-import { formatContestDate, formatContestWhen, formatRegistrationDeadline, formatRegistrationWindow, cleanVenue } from "@/lib/contest-format";
+import { formatContestDate, formatContestWhen, formatRegistrationDeadline, formatRegistrationWindow, cleanVenue, isUpcoming } from "@/lib/contest-format";
 import type { Account } from "@/types/account";
 import type { ContestDetail, ContestRegistration } from "@/types/contest";
 import AITextLoading from "@/components/ui/ai-text-loading";
@@ -90,6 +91,7 @@ export default function ContestPage() {
     );
 
   const { contest, registration } = state.detail;
+  const isPast = !isUpcoming(contest);
   return (
     <div className="section-page">
       {back}
@@ -121,55 +123,108 @@ export default function ContestPage() {
         </div>
       </section>
 
-      {registration ? (
-        <div className="profile-panel">
-          {contest.mandatory && <span className="status-pill is-mandatory">MANDATORY</span>}
-          <span className="status-pill is-done">
-            <Check size={13} aria-hidden="true" /> You’re registered
-          </span>
-          <dl className="summary-list registered-details">
-            {registration.teamName && <><dt>Team Name</dt><dd>{registration.teamName}</dd></>}
-            {registration.members?.map((member) => <Fragment key={member.enrollmentNo}><dt>{member.role === "LEADER" ? "Team Leader" : "Team Member"}</dt><dd>{member.name} · {member.enrollmentNo} · {member.batch} · {member.branch}</dd></Fragment>)}
-            {!registration.teamName && <><dt>Name</dt>
-            <dd>{account.displayName}</dd>
-            <dt>Enrollment number</dt>
-            <dd>{account.profile.enrollmentNo}</dd>
-            <dt>Batch · Branch</dt>
-            <dd>
-              {account.profile.batch} · {account.profile.branch}
-            </dd>
-            <dt>Year of Study</dt>
-            <dd>{account.profile.academic.yearOfStudyLabel ?? "—"}</dd>
-            <dt>HackerRank ID</dt>
-            <dd>{registration.hackerrankHandle}</dd>
-            <dt>Registered on</dt>
-            <dd>{formatContestDate(registration.createdAt)}</dd>
-            </>}
-          </dl>
-          {slug === "execute-26-4" && registration.role !== "LEADER" ? (
-            <p className="panel-help">Only the team leader can withdraw this team registration.</p>
-          ) : (
-            <WithdrawRegistration contest={contest} onWithdraw={withdraw} />
-          )}
-        </div>
-      ) : contest.registrationStatus === "SOON" ? (
-        <div className="profile-panel">
-          <span className="status-pill is-soon">Registrations Opening Soon</span>
-          <p className="panel-help">Registration hasn’t opened yet. Check back soon.</p>
-        </div>
-      ) : contest.registrationStatus === "CLOSED" ? (
-        <div className="profile-panel">
-          <span className="status-pill is-closed">Registration closed</span>
-          <p className="panel-help">Registration for this contest has closed.</p>
-        </div>
-      ) : (
-        <div className="profile-panel">
-          {contest.mandatory && <span className="status-pill is-mandatory">MANDATORY · Registration required</span>}
-          {contest.participationType === "TEAM" || slug === "execute-26-4" ? (
-            <TeamRegistrationForm account={account} contest={contest} onSubmit={registerTeam} />
-          ) : (
-            <ContestRegistrationForm account={account} onSubmit={register} />
-          )}
+      {(() => {
+        if (registration) {
+          return (
+            <div className="profile-panel">
+              {contest.mandatory && <span className="status-pill is-mandatory">MANDATORY</span>}
+              <span className="status-pill is-done">
+                <Check size={13} aria-hidden="true" /> {isPast ? "You participated" : "You’re registered"}
+              </span>
+              <dl className="summary-list registered-details">
+                {registration.teamName && <><dt>Team Name</dt><dd>{registration.teamName}</dd></>}
+                {registration.members?.map((member) => <Fragment key={member.enrollmentNo}><dt>{member.role === "LEADER" ? "Team Leader" : "Team Member"}</dt><dd>{member.name} · {member.enrollmentNo} · {member.batch} · {member.branch}</dd></Fragment>)}
+                {!registration.teamName && <><dt>Name</dt>
+                <dd>{account.displayName}</dd>
+                <dt>Enrollment number</dt>
+                <dd>{account.profile.enrollmentNo}</dd>
+                <dt>Batch · Branch</dt>
+                <dd>
+                  {account.profile.batch} · {account.profile.branch}
+                </dd>
+                <dt>Year of Study</dt>
+                <dd>{account.profile.academic.yearOfStudyLabel ?? "—"}</dd>
+                <dt>HackerRank ID</dt>
+                <dd>{registration.hackerrankHandle}</dd>
+                <dt>Registered on</dt>
+                <dd>{formatContestDate(registration.createdAt)}</dd>
+                </>}
+              </dl>
+              {!isPast && (
+                slug === "execute-26-4" && registration.role !== "LEADER" ? (
+                  <p className="panel-help">Only the team leader can withdraw this team registration.</p>
+                ) : (
+                  <WithdrawRegistration contest={contest} onWithdraw={withdraw} />
+                )
+              )}
+            </div>
+          );
+        }
+
+        if (isPast) {
+          return (
+            <div className="profile-panel">
+              <span className="status-pill is-closed">Contest Ended</span>
+              <p className="panel-help">This contest has concluded.</p>
+            </div>
+          );
+        }
+
+        if (contest.registrationStatus === "SOON") {
+          return (
+            <div className="profile-panel">
+              <span className="status-pill is-soon">Registrations Opening Soon</span>
+              <p className="panel-help">Registration hasn’t opened yet. Check back soon.</p>
+            </div>
+          );
+        }
+
+        if (contest.registrationStatus === "CLOSED") {
+          return (
+            <div className="profile-panel">
+              <span className="status-pill is-closed">Registration closed</span>
+              <p className="panel-help">Registration for this contest has closed.</p>
+            </div>
+          );
+        }
+
+        return (
+          <div className="profile-panel">
+            {contest.mandatory && <span className="status-pill is-mandatory">MANDATORY · Registration required</span>}
+            {contest.participationType === "TEAM" || slug === "execute-26-4" ? (
+              <TeamRegistrationForm account={account} contest={contest} onSubmit={registerTeam} />
+            ) : (
+              <ContestRegistrationForm account={account} onSubmit={register} />
+            )}
+          </div>
+        );
+      })()}
+
+      {/* Official Leaderboard for Ended Contests */}
+      {isPast && state.detail.leaderboard && (
+        <ContestLeaderboardView
+          leaderboard={state.detail.leaderboard}
+          account={account}
+          isAdmin={account.role === "ADMIN"}
+          onDeleteLeaderboard={async () => {
+            await api(`/api/admin/contests/${encodeURIComponent(slug)}/leaderboard`, { method: "DELETE" });
+            setState((current) => (current.detail ? { ...current, detail: { ...current.detail, leaderboard: null } } : current));
+          }}
+        />
+      )}
+
+      {/* Admin Notice when no Leaderboard has been uploaded for a Past Contest */}
+      {isPast && !state.detail.leaderboard && account.role === "ADMIN" && (
+        <div className="mt-8 rounded-xl border border-dashed border-[var(--border)] bg-[var(--surface-muted)]/40 p-5 text-center">
+          <p className="text-xs text-[var(--text-secondary)]">
+            No official standings have been published yet for this concluded contest.
+          </p>
+          <Link
+            href="/dashboard/admin"
+            className="mt-2.5 inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-xs font-semibold text-[var(--accent)] shadow-sm hover:border-[var(--accent)]"
+          >
+            Upload Leaderboard JSON in Admin Center &rarr;
+          </Link>
         </div>
       )}
     </div>
