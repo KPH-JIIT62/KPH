@@ -46,7 +46,16 @@ export function formatContestDate(iso: string | null) {
 }
 
 // The coloured label on a contest or session (anything with a registrationStatus). `tone` picks the colour (.status-pill.is-<tone> in globals.css).
-export function contestBadge(contest: Pick<Contest, "registrationStatus">, registered: boolean): { label: string; tone: "done" | "open" | "soon" | "closed" } {
+export function contestBadge(
+  contest: Pick<Contest, "registrationStatus"> & { startsAt?: string | null; endsAt?: string | null },
+  registered: boolean,
+  now: Date = new Date()
+): { label: string; tone: "done" | "open" | "soon" | "closed" } {
+  const isPast = !isUpcoming(contest, now);
+  if (isPast) {
+    if (registered) return { label: "Participated", tone: "done" };
+    return { label: "Ended", tone: "closed" };
+  }
   if (registered) return { label: "Registered", tone: "done" };
   if (contest.registrationStatus === "SOON") return { label: "Registrations Opening Soon", tone: "soon" };
   if (contest.registrationStatus === "OPEN") return { label: "Registration Open", tone: "open" };
@@ -54,8 +63,13 @@ export function contestBadge(contest: Pick<Contest, "registrationStatus">, regis
 }
 
 // "Upcoming" = has not finished yet (a contest or session that is on right now counts). If no end time is set we use the start time;
-// a contest with no dates at all ("Date to be announced") is still to come.
-export function isUpcoming(contest: { startsAt: string | null; endsAt: string | null }, now: Date = new Date()) {
-  const last = contest.endsAt ?? contest.startsAt;
-  return last === null || new Date(last).getTime() > now.getTime();
+// a contest with no dates at all ("Date to be announced") is still to come unless marked closed.
+export function isUpcoming(contest: { startsAt?: string | null; endsAt?: string | null; registrationStatus?: string }, now: Date = new Date()) {
+  const last = contest.endsAt ?? contest.startsAt ?? null;
+  if (!last) {
+    // If no dates set yet, but registration is closed, it has already taken place or is archived
+    if (contest.registrationStatus === "CLOSED") return false;
+    return true;
+  }
+  return new Date(last).getTime() > now.getTime();
 }

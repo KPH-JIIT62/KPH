@@ -1,12 +1,12 @@
 import Link from "next/link";
 import { ArrowRight, CalendarClock, Check, Hourglass, MapPin } from "lucide-react";
 import { ContestHighlights } from "@/components/contests/contest-highlights";
-import { contestBadge, formatContestWhen, formatRegistrationDeadline, formatRegistrationWindow, cleanVenue } from "@/lib/contest-format";
+import { contestBadge, isUpcoming, formatContestWhen, formatRegistrationDeadline, formatRegistrationWindow, cleanVenue } from "@/lib/contest-format";
 import type { ContestSummary } from "@/types/contest";
 
 const badgeIcon = (registered: boolean) => (registered ? <Check size={13} aria-hidden="true" /> : null);
 // Only worth showing while people can still register and have not yet.
-const showDeadline = (contest: ContestSummary) => contest.registrationStatus === "OPEN" && !contest.registration && contest.registrationClosesAt;
+const showDeadline = (contest: ContestSummary) => isUpcoming(contest) && contest.registrationStatus === "OPEN" && !contest.registration && contest.registrationClosesAt;
 
 // One contest as a card on the Contests page.
 export function ContestCard({ contest }: { contest: ContestSummary }) {

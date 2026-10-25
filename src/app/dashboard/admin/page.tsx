@@ -443,14 +443,13 @@ export default function AdminPage() {
       setEditSubmitting(true);
       setFeedback(null);
 
-      let startsAt = editContestForm.startsAt || null;
-      let endsAt = editContestForm.endsAt || null;
-      if (editContestForm.contestDate && editContestForm.contestStartTime) {
-        startsAt = `${editContestForm.contestDate}T${editContestForm.contestStartTime}:00+05:30`;
-      }
-      if (editContestForm.contestDate && editContestForm.contestEndTime) {
-        endsAt = `${editContestForm.contestDate}T${editContestForm.contestEndTime}:00+05:30`;
-      }
+      const startsAt = editContestForm.contestDate && editContestForm.contestStartTime
+        ? `${editContestForm.contestDate}T${editContestForm.contestStartTime}:00+05:30`
+        : (editContestForm.startsAt || editingContest.startsAt || null);
+
+      const endsAt = editContestForm.contestDate && editContestForm.contestEndTime
+        ? `${editContestForm.contestDate}T${editContestForm.contestEndTime}:00+05:30`
+        : (editContestForm.endsAt || editingContest.endsAt || null);
       const cleanVenueInput = editContestForm.venue ? editContestForm.venue.replace(/\s*,\s*/g, ", ").trim() : "";
 
       const { contest } = await api<{ contest: AdminContest }>(`/api/admin/contests/${editingContest.slug}`, {
@@ -1798,8 +1797,8 @@ export default function AdminPage() {
                   </div>
 
                   {contestToDelete.registrationsCount > 0 ? (
-                    <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-2.5 text-[11px] text-amber-800 dark:text-amber-300">
-                      ⚠️ This contest has <strong>{contestToDelete.registrationsCount} registered participant(s)</strong>. To protect student registration records, the database restricts deleting contests with active registrations. If the contest is completed, please consider setting registration status to <strong>CLOSED</strong> instead.
+                    <div className="rounded-lg border border-rose-500/20 bg-rose-500/10 p-2.5 text-[11px] text-rose-800 dark:text-rose-300">
+                      ⚠️ This contest has <strong>{contestToDelete.registrationsCount} registered participant(s)</strong>. Deleting this contest will permanently delete the contest and all associated student registrations. This action cannot be undone.
                     </div>
                   ) : (
                     <div className="rounded-lg border border-rose-500/20 bg-rose-500/10 p-2.5 text-[11px] text-rose-800 dark:text-rose-300">

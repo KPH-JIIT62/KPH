@@ -202,10 +202,10 @@ function createAdminService(pool, { now = () => new Date() } = {}) {
     const prizePool = data.prizePool !== undefined ? (data.prizePool && String(data.prizePool).trim() ? String(data.prizePool).trim() : null) : contest.prize_pool;
     const goodies = data.goodies !== undefined ? (data.goodies && String(data.goodies).trim() ? String(data.goodies).trim() : null) : contest.goodies;
 
-    const startsAt = data.startsAt !== undefined ? (data.startsAt ? new Date(data.startsAt) : null) : contest.starts_at;
-    const endsAt = data.endsAt !== undefined ? (data.endsAt ? new Date(data.endsAt) : null) : contest.ends_at;
-    const registrationStartsAt = data.registrationStartsAt !== undefined ? (data.registrationStartsAt ? new Date(data.registrationStartsAt) : null) : contest.registration_starts_at;
-    const registrationClosesAt = data.registrationClosesAt !== undefined ? (data.registrationClosesAt ? new Date(data.registrationClosesAt) : null) : contest.registration_closes_at;
+    const startsAt = data.startsAt !== undefined && data.startsAt !== "" ? (data.startsAt ? new Date(data.startsAt) : null) : contest.starts_at;
+    const endsAt = data.endsAt !== undefined && data.endsAt !== "" ? (data.endsAt ? new Date(data.endsAt) : null) : contest.ends_at;
+    const registrationStartsAt = data.registrationStartsAt !== undefined && data.registrationStartsAt !== "" ? (data.registrationStartsAt ? new Date(data.registrationStartsAt) : null) : contest.registration_starts_at;
+    const registrationClosesAt = data.registrationClosesAt !== undefined && data.registrationClosesAt !== "" ? (data.registrationClosesAt ? new Date(data.registrationClosesAt) : null) : contest.registration_closes_at;
 
     if (startsAt && endsAt && endsAt <= startsAt) {
       throw new HttpError(400, "VALIDATION_ERROR", "End date must be after the start date.", { endsAt: "Must end after starting." });
@@ -258,13 +258,30 @@ function createAdminService(pool, { now = () => new Date() } = {}) {
     if (!rows.length) throw new HttpError(404, "NOT_FOUND", "Contest not found.");
     const contest = rows[0];
 
-    const { rows: regs } = await pool.query("SELECT count(*)::int AS count FROM contest_registrations WHERE contest_id = $1", [contest.id]);
-    if (regs[0].count > 0) {
-      throw new HttpError(409, "CONTEST_HAS_REGISTRATIONS", `Cannot delete contest "${contest.title}" because it already has ${regs[0].count} registered participant(s). Set status to CLOSED instead.`);
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      // 1. Delete team members of teams in this contest
+      await client.query(
+        `DELETE FROM contest_team_members 
+         WHERE team_id IN (SELECT id FROM contest_teams WHERE contest_id = $1)`,
+        [contest.id]
+      );
+      // 2. Delete teams in this contest
+      await client.query("DELETE FROM contest_teams WHERE contest_id = $1", [contest.id]);
+      // 3. Delete individual registrations in this contest
+      await client.query("DELETE FROM contest_registrations WHERE contest_id = $1", [contest.id]);
+      // 4. Delete the contest itself
+      await client.query("DELETE FROM contests WHERE id = $1", [contest.id]);
+      await client.query("COMMIT");
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    } finally {
+      client.release();
     }
 
-    await pool.query("DELETE FROM contests WHERE slug = $1", [slug]);
-    return { ok: true, deletedSlug: slug };
+    return { ok: true, deletedSlug: slug, title: contest.title };
   }
 
   // -------------------------------------------------------------
