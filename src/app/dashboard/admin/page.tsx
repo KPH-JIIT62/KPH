@@ -1974,7 +1974,7 @@ export default function AdminPage() {
             {/* Left Column: Configuration */}
             <div className="space-y-5 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-5 shadow-sm lg:col-span-1">
               <div>
-                <h3 className="text-sm font-bold text-[var(--text)]">1. Select Contest</h3>
+                <h3 className="mb-2 text-sm font-bold text-[var(--text)]">1. Select Contest</h3>
                 <select
                   value={selectedContestSlug}
                   onChange={(e) => {
@@ -1995,13 +1995,9 @@ export default function AdminPage() {
                     </option>
                   ))}
                 </select>
-                {!selectedContestSlug ? (
-                  <p className="mt-1.5 text-[11px] font-medium text-amber-500">
-                    ⚠️ Please select a contest first. Contest selection is required before uploading or generating certificates.
-                  </p>
-                ) : (
-                  <p className="mt-1.5 text-[11px] text-[var(--muted)]">
-                    Selected: <b className="text-[var(--text)]">{contests.find((c) => c.slug === selectedContestSlug)?.title}</b>
+                {!selectedContestSlug && (
+                  <p className="mt-2 text-[11px] font-medium text-amber-500">
+                    ⚠️ Please select a contest first.
                   </p>
                 )}
               </div>
@@ -2009,32 +2005,21 @@ export default function AdminPage() {
               <div>
                 <div className="mb-2 flex items-center justify-between gap-2">
                   <h3 className="text-sm font-bold text-[var(--text)]">2. Upload Leaderboard (JSON)</h3>
-                  {/* <button
-                    type="button"
-                    onClick={loadSampleLeaderboard}
-                    disabled={!selectedContestSlug}
-                    className="text-[11px] font-semibold text-[var(--accent)] hover:underline whitespace-nowrap disabled:opacity-40 disabled:hover:no-underline disabled:cursor-not-allowed"
-                  >
-                    Sample Data
-                  </button> */}
                 </div>
-                <p className="mb-3 text-xs text-[var(--text-secondary)]">
-                  Upload a HackerRank/Contest leaderboard JSON export or load sample:
+                <p className="mb-2 text-xs text-[var(--text-secondary)]">
+                  Upload a Contest leaderboard JSON export:
                 </p>
 
                 <label
-                  className={`flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-[var(--border)] p-4 text-center transition-colors ${
+                  className={`flex items-center justify-center gap-2 rounded-lg border border-dashed border-[var(--border)] py-2.5 px-3 text-center transition-colors ${
                     !selectedContestSlug
                       ? "cursor-not-allowed opacity-50 bg-[var(--surface-muted)]/50"
                       : "cursor-pointer hover:border-[var(--accent)] hover:bg-[var(--surface-muted)]"
                   }`}
                 >
-                  <Upload size={24} className="mb-1 text-[var(--muted)]" />
+                  <Upload size={16} className="text-[var(--muted)] shrink-0" />
                   <span className="text-xs font-semibold text-[var(--text)]">
                     {!selectedContestSlug ? "Select a contest above first" : "Click to browse .json file"}
-                  </span>
-                  <span className="text-[10px] text-[var(--muted)]">
-                    {!selectedContestSlug ? "Required before uploading" : "or drag and drop"}
                   </span>
                   <input
                     type="file"
@@ -2391,7 +2376,7 @@ export default function AdminPage() {
                       ) : !selectedContestSlug ? (
                         <tr>
                           <td colSpan={10} className="px-4 py-12 text-center text-amber-500 font-medium">
-                            Please select a contest from dropdown (1. Select Contest) first to view, generate, or publish leaderboard certificates.
+                            Please select a contest from dropdown .
                           </td>
                         </tr>
                       ) : (
