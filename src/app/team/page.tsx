@@ -274,6 +274,19 @@ const teamMembers: TeamMember[] = [
     specialty: "Problem Solving & Tech Operations",
     linkedin: "https://www.linkedin.com/in/ananya-tiwari-5bb845317",
   },
+  {
+    id: "prakhar-arora",
+    name: "Prakhar Arora",
+    role: "Coordinator",
+    category: "coordinators",
+    image: "/images/team/prakhar-arora.png",
+    objectPosition: "center 20%",
+    quote: "it's not that deep.",
+    nameGradient: THEME_NAME_GRADIENT,
+    specialty: "Problem Solving & Tech Operations",
+    linkedin: "https://www.linkedin.com/in/prakhar-arora-knp",
+  },
+
 
   // Volunteers
   {
