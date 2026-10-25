@@ -189,9 +189,9 @@ export function EventShowcase({ event }: { event: FeaturedEvent }) {
                   Ranked by problems solved, then penalty minutes.
                 </Dialog.Description>
                 <ol className="standing-list">
-                  {event.standings.map((standing) => (
+                  {event.standings.map((standing, idx) => (
                     <StandingRow
-                      key={standing.rank}
+                      key={`${standing.rank}-${standing.team}-${idx}`}
                       standing={standing}
                       total={event.problemCount}
                     />

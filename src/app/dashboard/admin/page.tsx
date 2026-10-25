@@ -1976,12 +1976,12 @@ export default function AdminPage() {
               </div>
 
               <div>
-                <div className="mb-2 flex items-center justify-between">
+                <div className="mb-2 flex items-center justify-between gap-2">
                   <h3 className="text-sm font-bold text-[var(--text)]">2. Upload Leaderboard (JSON)</h3>
                   <button
                     type="button"
                     onClick={loadSampleLeaderboard}
-                    className="text-[11px] font-semibold text-[var(--accent)] hover:underline"
+                    className="text-[11px] font-semibold text-[var(--accent)] hover:underline whitespace-nowrap"
                   >
                     Sample Data
                   </button>
@@ -2125,8 +2125,8 @@ export default function AdminPage() {
                   </div>
                 </div>
 
-                <div className="max-h-[480px] overflow-y-auto">
-                  <table className="w-full text-left text-xs">
+                <div className="max-h-[500px] overflow-x-auto overflow-y-auto">
+                  <table className="w-full text-left text-xs min-w-[750px]">
                     <thead className="sticky top-0 bg-[var(--surface-muted)] text-[var(--text-secondary)]">
                       <tr>
                         <th className="px-3 py-2 font-semibold text-center w-12">Rank</th>
@@ -2150,10 +2150,11 @@ export default function AdminPage() {
                               c.email.toLowerCase().includes(leaderboardSearch.toLowerCase()) ||
                               c.enrollmentNo.toLowerCase().includes(leaderboardSearch.toLowerCase())
                           )
-                          .map((cert) => {
+                          .map((cert, idx) => {
                             const pMatch = parsedLeaderboard.find((p) => p.name === cert.name || (p.enrollmentNo && p.enrollmentNo === cert.enrollmentNo));
+                            const certKey = `${cert.filename || cert.enrollmentNo || cert.name}-${idx}`;
                             return (
-                              <tr key={cert.filename} className="hover:bg-[var(--surface-hover)]">
+                              <tr key={certKey} className="hover:bg-[var(--surface-hover)]">
                                 <td className="px-3 py-2.5 text-center">
                                   <span
                                     className={`inline-flex size-6 items-center justify-center rounded-full text-[11px] font-bold ${
@@ -2280,7 +2281,10 @@ export default function AdminPage() {
                               (p.hackerRankHandle && p.hackerRankHandle.toLowerCase().includes(leaderboardSearch.toLowerCase()))
                           )
                           .map((p, idx) => (
-                            <tr key={p.rank} className="hover:bg-[var(--surface-hover)]">
+                            <tr
+                              key={`${p.rank}-${p.enrollmentNo || p.hackerRankHandle || p.name}-${idx}`}
+                              className="hover:bg-[var(--surface-hover)]"
+                            >
                               <td className="px-3 py-2.5 text-center">
                                 <span
                                   className={`inline-flex size-6 items-center justify-center rounded-full text-[11px] font-bold ${

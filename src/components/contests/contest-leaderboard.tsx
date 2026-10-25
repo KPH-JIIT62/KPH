@@ -387,11 +387,12 @@ export function ContestLeaderboardView({
             </thead>
             <tbody className="divide-y divide-[var(--border)]">
               {paginatedEntries.length > 0 ? (
-                paginatedEntries.map((row) => {
+                paginatedEntries.map((row, idx) => {
                   const isMe = myEntry && row.rank === myEntry.rank;
+                  const rowKey = `${row.rank}-${row.enrollmentNo || row.hackerRankHandle || row.displayName || "contestant"}-${idx}`;
                   return (
                     <tr
-                      key={row.rank}
+                      key={rowKey}
                       id={`rank-row-${row.rank}`}
                       className={`transition-colors ${
                         isMe
@@ -462,7 +463,7 @@ export function ContestLeaderboardView({
                         {row.branch || row.batch ? (
                           <span>
                             {row.batch ? `${row.batch} ` : ""}
-                            {row.branch ? `&middot; ${row.branch}` : ""}
+                            {row.branch ? `· ${row.branch}` : ""}
                             {row.campus ? ` (${row.campus})` : ""}
                           </span>
                         ) : (

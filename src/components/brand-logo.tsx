@@ -12,6 +12,7 @@ export function BrandLogo({ className = "" }: BrandLogoProps) {
         alt="Knuth Programming Hub"
         width={1080}
         height={394}
+        priority
         className="brand-logo-image brand-logo-light"
       />
       <Image
@@ -19,6 +20,7 @@ export function BrandLogo({ className = "" }: BrandLogoProps) {
         alt="Knuth Programming Hub"
         width={1080}
         height={472}
+        priority
         className="brand-logo-image brand-logo-dark"
       />
       <span className="brand-logo-name">Knuth Programming Hub</span>
