@@ -38,7 +38,9 @@ function createContestsController(contestService, userService) {
       if (memberIds.some((id) => typeof id !== "string" || !/^[0-9a-f-]{36}$/i.test(id))) fields.members = "Invalid member format.";
       if (memberIds.length > 5) fields.members = "You can add up to 5 additional members (6 total).";
       if (Object.keys(fields).length) throw new HttpError(400, "VALIDATION_ERROR", "Please fix the highlighted fields.", fields);
-      res.status(201).json({ registration: await contestService.registerTeam(req.user.id, slug, { teamName, hackerrankHandle, memberIds }) });
+      const registration = await contestService.registerTeam(req.user.id, slug, { teamName, hackerrankHandle, memberIds });
+      const { user, ...publicRegistration } = registration;
+      res.status(201).json({ registration: publicRegistration, ...(user ? { user } : {}) });
     },
     // POST /api/contests/:slug/registrations
     async register(req, res) {

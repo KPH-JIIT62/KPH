@@ -166,9 +166,14 @@ function createContestService(pool, userService, { now = () => new Date() } = {}
         throw new HttpError(400, "NOT_ENOUGH_MEMBERS", `This contest requires a minimum of ${minMembers} member(s) per team.`);
       }
 
-      if (contest.hackerrank_required && !hackerrankHandle) {
+      if ((slug === EXECUTE || contest.hackerrank_required) && !hackerrankHandle) {
         throw new HttpError(400, "VALIDATION_ERROR", "Team HackerRank ID is required for this contest.", {
           hackerrankHandle: "Team HackerRank ID is required.",
+        });
+      }
+      if (hackerrankHandle && !/^[A-Za-z0-9_.-]{1,40}$/.test(hackerrankHandle)) {
+        throw new HttpError(400, "VALIDATION_ERROR", "Please enter a valid HackerRank ID (up to 40 letters, numbers, dots, underscores, or hyphens).", {
+          hackerrankHandle: "HackerRank username should be letters, digits, _ . or - (up to 40 characters).",
         });
       }
 
@@ -214,8 +219,16 @@ function createContestService(pool, userService, { now = () => new Date() } = {}
       for (const id of memberIds) {
         await client.query("INSERT INTO contest_team_members(team_id,user_id,role) VALUES($1,$2,'MEMBER')", [team.id, id]);
       }
+      const updatedLeader = hackerrankHandle
+        ? await userService.setHackerrankHandle(userId, hackerrankHandle, client)
+        : null;
       await client.query("COMMIT");
-      return { ...toTeamRegistration(team), members: await teamMembers(team.id), role: "LEADER" };
+      return {
+        ...toTeamRegistration(team),
+        members: await teamMembers(team.id),
+        role: "LEADER",
+        ...(updatedLeader ? { user: await userService.toPublic(updatedLeader) } : {}),
+      };
     } catch (error) {
       await client.query("ROLLBACK");
       if (error.code === "23505") throw new HttpError(409, "TEAM_CONFLICT", "A team member or this team identity is already registered. Refresh and try again.");
