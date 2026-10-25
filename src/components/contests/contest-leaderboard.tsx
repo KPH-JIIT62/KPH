@@ -225,13 +225,7 @@ export function ContestLeaderboardView({
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={jumpToMyRank}
-              className="rounded-md border border-emerald-500/40 bg-emerald-500/20 px-3 py-1 font-semibold text-emerald-800 transition hover:bg-emerald-500/30 dark:text-emerald-300"
-            >
-              Highlight My Row &darr;
-            </button>
+            
           </div>
         )}
 
@@ -251,7 +245,7 @@ export function ContestLeaderboardView({
             />
           </div>
 
-          <div className="flex flex-wrap items-center gap-1.5">
+          {/* <div className="flex flex-wrap items-center gap-1.5">
             <button
               type="button"
               onClick={() => {
@@ -294,7 +288,7 @@ export function ContestLeaderboardView({
             >
               JIIT Registered
             </button>
-          </div>
+          </div> */}
         </div>
 
         {/* Leaderboard Table Container */}

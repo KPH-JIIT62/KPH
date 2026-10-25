@@ -2009,14 +2009,14 @@ export default function AdminPage() {
               <div>
                 <div className="mb-2 flex items-center justify-between gap-2">
                   <h3 className="text-sm font-bold text-[var(--text)]">2. Upload Leaderboard (JSON)</h3>
-                  <button
+                  {/* <button
                     type="button"
                     onClick={loadSampleLeaderboard}
                     disabled={!selectedContestSlug}
                     className="text-[11px] font-semibold text-[var(--accent)] hover:underline whitespace-nowrap disabled:opacity-40 disabled:hover:no-underline disabled:cursor-not-allowed"
                   >
                     Sample Data
-                  </button>
+                  </button> */}
                 </div>
                 <p className="mb-3 text-xs text-[var(--text-secondary)]">
                   Upload a HackerRank/Contest leaderboard JSON export or load sample:
