@@ -15,7 +15,6 @@ import {
   Users,
   CheckCircle2,
   XCircle,
-  Download,
   Flame,
   ArrowUpDown,
   Filter,
@@ -115,56 +114,6 @@ export function ContestLeaderboardView({
     }
   }
 
-  // Export Leaderboard to CSV
-  function exportCsv() {
-    const headers = [
-      "Rank",
-      "Name",
-      "HackerRank Handle",
-      "Enrollment No",
-      "Branch",
-      "Batch",
-      "Campus",
-      "Score",
-      "Solved",
-      "Penalty",
-      "Disqualified",
-    ];
-    problems.forEach((p, idx) => {
-      headers.push(p.name || `Problem ${idx + 1}`);
-    });
-
-    const rows = entries.map((e) => {
-      const row = [
-        e.rank,
-        `"${(e.displayName || "").replace(/"/g, '""')}"`,
-        `"${(e.hackerRankHandle || "").replace(/"/g, '""')}"`,
-        `"${e.enrollmentNo || ""}"`,
-        `"${e.branch || ""}"`,
-        `"${e.batch || ""}"`,
-        `"${e.campus || ""}"`,
-        e.score,
-        e.solved ?? 0,
-        e.penalty ?? 0,
-        e.disqualified ? "YES" : "NO",
-      ];
-      problems.forEach((p) => {
-        const prob = e.problems?.find((ep) => ep.slug === p.slug || ep.name === p.name);
-        row.push(prob?.solved ? prob.bestScore ?? 100 : 0);
-      });
-      return row.join(",");
-    });
-
-    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows].join("\n");
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `${leaderboard.contestSlug || "contest"}_leaderboard.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  }
-
   async function handleDelete() {
     if (!onDeleteLeaderboard) return;
     try {
@@ -205,19 +154,8 @@ export function ContestLeaderboardView({
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={exportCsv}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-xs font-medium text-[var(--text)] shadow-sm transition hover:bg-[var(--surface-muted)]"
-              title="Download CSV of standings"
-            >
-              <Download size={14} />
-              <span>Export CSV</span>
-            </button>
-
-            {/* Admin Delete Action */}
-            {isAdmin && onDeleteLeaderboard && (
+          {isAdmin && onDeleteLeaderboard && (
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 onClick={() => setDeleteModalOpen(true)}
@@ -227,8 +165,8 @@ export function ContestLeaderboardView({
                 <Trash2 size={14} />
                 <span>Delete Leaderboard</span>
               </button>
-            )}
-          </div>
+            </div>
+          )}
         </div>
 
         {/* Overview Stats Bar */}

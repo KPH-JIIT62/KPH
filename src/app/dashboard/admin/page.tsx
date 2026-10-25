@@ -222,9 +222,7 @@ export default function AdminPage() {
       ]);
       setContests(contestsRes.contests);
       setAdmins(adminsRes.admins);
-      if (contestsRes.contests.length > 0) {
-        setSelectedContestSlug((prev) => prev || contestsRes.contests[0].slug);
-      }
+      // selectedContestSlug defaults to "" (None), requiring admin to explicitly select a contest
     } catch (err) {
       setFeedback({
         type: "error",
@@ -536,6 +534,10 @@ export default function AdminPage() {
 
   // Leaderboard & Certificates
   function handleJsonUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    if (!selectedContestSlug) {
+      setFeedback({ type: "error", message: "Please select a contest from the dropdown (1. Select Contest) first." });
+      return;
+    }
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
@@ -547,6 +549,10 @@ export default function AdminPage() {
   }
 
   function processJsonContent(content: string) {
+    if (!selectedContestSlug) {
+      setFeedback({ type: "error", message: "Please select a contest from the dropdown (1. Select Contest) first." });
+      return;
+    }
     try {
       setFeedback(null);
       const data = JSON.parse(content);
@@ -611,6 +617,10 @@ export default function AdminPage() {
   }
 
   function loadSampleLeaderboard() {
+    if (!selectedContestSlug) {
+      setFeedback({ type: "error", message: "Please select a contest from the dropdown (1. Select Contest) first." });
+      return;
+    }
     const sample = JSON.stringify(SAMPLE_LEADERBOARD, null, 2);
     processJsonContent(sample);
   }
@@ -677,6 +687,10 @@ export default function AdminPage() {
   }
 
   async function handleGenerateCertificates() {
+    if (!selectedContestSlug) {
+      setFeedback({ type: "error", message: "Please select a contest from the dropdown (1. Select Contest) before generating certificates." });
+      return;
+    }
     if (!parsedLeaderboard.length) {
       setFeedback({ type: "error", message: "Please upload or load a leaderboard before generating certificates." });
       return;
@@ -1961,18 +1975,35 @@ export default function AdminPage() {
             <div className="space-y-5 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-5 shadow-sm lg:col-span-1">
               <div>
                 <h3 className="text-sm font-bold text-[var(--text)]">1. Select Contest</h3>
-                {/* <p className="mb-2 text-xs text-[var(--text-secondary)]">Choose which contest this leaderboard belongs to:</p> */}
                 <select
                   value={selectedContestSlug}
-                  onChange={(e) => setSelectedContestSlug(e.target.value)}
+                  onChange={(e) => {
+                    const slug = e.target.value;
+                    setSelectedContestSlug(slug);
+                    if (!slug) {
+                      setParsedLeaderboard([]);
+                      setGeneratedCertificates([]);
+                      setPublishedLeaderboardInfo(null);
+                    }
+                  }}
                   className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs text-[var(--text)]"
                 >
+                  <option value="">None (Select a Contest)</option>
                   {contests.map((c) => (
                     <option key={c.slug} value={c.slug}>
                       {c.title} ({c.slug})
                     </option>
                   ))}
                 </select>
+                {!selectedContestSlug ? (
+                  <p className="mt-1.5 text-[11px] font-medium text-amber-500">
+                    ⚠️ Please select a contest first. Contest selection is required before uploading or generating certificates.
+                  </p>
+                ) : (
+                  <p className="mt-1.5 text-[11px] text-[var(--muted)]">
+                    Selected: <b className="text-[var(--text)]">{contests.find((c) => c.slug === selectedContestSlug)?.title}</b>
+                  </p>
+                )}
               </div>
 
               <div>
@@ -1981,7 +2012,8 @@ export default function AdminPage() {
                   <button
                     type="button"
                     onClick={loadSampleLeaderboard}
-                    className="text-[11px] font-semibold text-[var(--accent)] hover:underline whitespace-nowrap"
+                    disabled={!selectedContestSlug}
+                    className="text-[11px] font-semibold text-[var(--accent)] hover:underline whitespace-nowrap disabled:opacity-40 disabled:hover:no-underline disabled:cursor-not-allowed"
                   >
                     Sample Data
                   </button>
@@ -1990,13 +2022,24 @@ export default function AdminPage() {
                   Upload a HackerRank/Contest leaderboard JSON export or load sample:
                 </p>
 
-                <label className="flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-[var(--border)] p-4 text-center transition-colors hover:border-[var(--accent)] hover:bg-[var(--surface-muted)]">
+                <label
+                  className={`flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-[var(--border)] p-4 text-center transition-colors ${
+                    !selectedContestSlug
+                      ? "cursor-not-allowed opacity-50 bg-[var(--surface-muted)]/50"
+                      : "cursor-pointer hover:border-[var(--accent)] hover:bg-[var(--surface-muted)]"
+                  }`}
+                >
                   <Upload size={24} className="mb-1 text-[var(--muted)]" />
-                  <span className="text-xs font-semibold text-[var(--text)]">Click to browse .json file</span>
-                  <span className="text-[10px] text-[var(--muted)]">or drag and drop</span>
+                  <span className="text-xs font-semibold text-[var(--text)]">
+                    {!selectedContestSlug ? "Select a contest above first" : "Click to browse .json file"}
+                  </span>
+                  <span className="text-[10px] text-[var(--muted)]">
+                    {!selectedContestSlug ? "Required before uploading" : "or drag and drop"}
+                  </span>
                   <input
                     type="file"
                     accept=".json"
+                    disabled={!selectedContestSlug}
                     onChange={handleJsonUpload}
                     className="hidden"
                   />
@@ -2008,8 +2051,8 @@ export default function AdminPage() {
                 <button
                   type="button"
                   onClick={handleGenerateCertificates}
-                  disabled={certGenerating || parsedLeaderboard.length === 0}
-                  className="button button-primary w-full"
+                  disabled={!selectedContestSlug || certGenerating || parsedLeaderboard.length === 0}
+                  className="button button-primary w-full disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   <Award size={16} />
                   <span>
@@ -2023,8 +2066,8 @@ export default function AdminPage() {
                 <button
                   type="button"
                   onClick={handlePublishLeaderboard}
-                  disabled={leaderboardPublishing || parsedLeaderboard.length === 0}
-                  className="button button-secondary w-full border-[var(--accent)] text-[var(--accent)] hover:bg-[var(--accent)] hover:text-black font-semibold"
+                  disabled={!selectedContestSlug || leaderboardPublishing || parsedLeaderboard.length === 0}
+                  className="button button-secondary w-full border-[var(--accent)] text-[var(--accent)] hover:bg-[var(--accent)] hover:text-black font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   <Trophy size={16} />
                   <span>
@@ -2035,7 +2078,7 @@ export default function AdminPage() {
                 </button>
 
                 {/* Published Leaderboard Status Pill & Quick Unpublish */}
-                {publishedLeaderboardInfo?.exists && (
+                {selectedContestSlug && publishedLeaderboardInfo?.exists && (
                   <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-2.5 text-xs text-emerald-800 dark:text-emerald-300">
                     <div className="flex items-center justify-between">
                       <span className="flex items-center gap-1.5 font-bold">
@@ -2061,8 +2104,8 @@ export default function AdminPage() {
                 <button
                   type="button"
                   onClick={() => setEmailConfirmModalOpen(true)}
-                  disabled={emailSending || generatedCertificates.length === 0}
-                  className="button button-secondary w-full"
+                  disabled={!selectedContestSlug || emailSending || generatedCertificates.length === 0}
+                  className="button button-secondary w-full disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   <Mail size={16} />
                   <span>
@@ -2345,10 +2388,16 @@ export default function AdminPage() {
                               </td>
                             </tr>
                           ))
+                      ) : !selectedContestSlug ? (
+                        <tr>
+                          <td colSpan={10} className="px-4 py-12 text-center text-amber-500 font-medium">
+                            Please select a contest from dropdown (1. Select Contest) first to view, generate, or publish leaderboard certificates.
+                          </td>
+                        </tr>
                       ) : (
                         <tr>
                           <td colSpan={10} className="px-4 py-12 text-center text-[var(--muted)]">
-                            No leaderboard records uploaded. Upload a JSON file or click &quot;Load Sample Data&quot; to begin.
+                            No leaderboard records uploaded for {contests.find((c) => c.slug === selectedContestSlug)?.title || selectedContestSlug}. Upload a JSON file or click &quot;Sample Data&quot; to begin.
                           </td>
                         </tr>
                       )}
