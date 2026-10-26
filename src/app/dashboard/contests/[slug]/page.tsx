@@ -186,7 +186,7 @@ export default function ContestPage() {
 
         return (
           <div className="profile-panel">
-            {contest.mandatory && <span className="status-pill is-mandatory">MANDATORY · Registration required</span>}
+            {contest.mandatory && <span className="status-pill is-mandatory registration-mandatory-badge">MANDATORY · Registration required</span>}
             {contest.participationType === "TEAM" || slug === "execute-26-4" ? (
               <TeamRegistrationForm account={account} contest={contest} onSubmit={registerTeam} />
             ) : (

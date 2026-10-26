@@ -3414,6 +3414,12 @@ fieldset.profile-field {
   color: #991b1b;
 }
 
+.registration-mandatory-badge {
+  display: flex;
+  width: fit-content;
+  margin-bottom: 14px;
+}
+
 .status-pill.is-done {
   background: var(--mark-sage-background);
   color: var(--mark-sage-text);
