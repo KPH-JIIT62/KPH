@@ -1692,6 +1692,25 @@ html[data-theme="dark"] .brand-logo-dark {
   color: var(--muted);
 }
 
+.execute-reminder-dialog {
+  max-width: 520px;
+}
+
+.execute-reminder-dialog .execute-reminder-description {
+  margin-top: 8px;
+  color: var(--text) !important;
+  font-size: 18px !important;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.execute-reminder-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 24px;
+}
+
 .dialog-body {
   margin-top: 24px;
   font-size: 14px;
