@@ -7,6 +7,7 @@ export type ContestRegistration = {
   status?: "ACTIVE" | "WITHDRAWN";
   role?: "LEADER" | "MEMBER";
   members?: Array<{ name: string; enrollmentNo: string; branch: string | null; batch: string | null; role: string }>;
+  seatingPlan?: { teamName: string | null; hallName: string | null; labNumber: string | null; systemNumber: string | null; message: string | null };
 };
 
 // SOON = "Registrations Opening Soon" (not open yet), OPEN = people can register, CLOSED = too late / switched off.

@@ -1947,6 +1947,31 @@ html[data-theme="dark"] .brand-logo-dark {
   align-items: start;
 }
 
+.execute-registration-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+  gap: 22px;
+  align-items: start;
+}
+
+.execute-registration-columns .profile-panel {
+  max-width: none;
+}
+
+.execute-seating-panel h2 {
+  margin: 0 0 18px;
+  color: var(--text);
+  font-size: 18px;
+}
+
+.execute-seating-panel .summary-list {
+  margin: 0;
+}
+
+.execute-seating-panel .panel-help {
+  margin-top: 18px;
+}
+
 .session-detail-main .profile-panel,
 .session-question-panel {
   max-width: none;
@@ -2001,6 +2026,10 @@ html[data-theme="dark"] .brand-logo-dark {
 }
 
 @media (max-width: 900px) {
+  .execute-registration-columns {
+    grid-template-columns: 1fr;
+  }
+
   .session-detail-columns {
     grid-template-columns: minmax(0, 1fr);
   }
