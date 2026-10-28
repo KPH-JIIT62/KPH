@@ -79,6 +79,7 @@ export default function ContestPage() {
   // (or the "opening soon" / "closed" panel), depending on whether registration is still open.
   async function withdraw() {
     await api<{ withdrawn: boolean }>(`/api/contests/${encodeURIComponent(slug)}/registrations/me`, { method: "DELETE" });
+    if (slug === "execute-26-4") window.dispatchEvent(new Event("execute-registration-changed"));
     retry();
   }
 
@@ -93,6 +94,7 @@ export default function ContestPage() {
 
   async function registerTeam(values: { teamName: string; hackerrankHandle: string; memberIds: string[] }) {
     const result = await api<{ registration: ContestRegistration; user?: Account }>(`/api/contests/${encodeURIComponent(slug)}/teams`, { method: "POST", body: values });
+    if (slug === "execute-26-4") window.dispatchEvent(new Event("execute-registration-changed"));
     if (result.user) applyAccount(result.user);
     setState((current) => current.detail ? { ...current, detail: { ...current.detail, registration: result.registration } } : current);
   }
