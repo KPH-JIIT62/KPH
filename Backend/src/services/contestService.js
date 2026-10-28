@@ -5,6 +5,7 @@
 const { HttpError } = require("../utils/HttpError");
 const { registrationStatus, withdrawalDeadline, withdrawalOpen, WITHDRAWAL_CUTOFF_MINUTES, EXECUTE_WITHDRAWAL_CUTOFF } = require("../utils/contestStatus");
 const { isExecuteMandatory } = require("../utils/executeEligibility");
+const { getSeatingPlan } = require("../utils/executeSeatingPlan");
 const EXECUTE = "execute-26-4";
 
 // `at` is "now". The status is worked out here, on the server, so the browser can never get it wrong.
@@ -70,7 +71,14 @@ function createContestService(pool, userService, { now = () => new Date() } = {}
     let registration = null;
     if (isTeam) {
       const reg = await pool.query(`SELECT t.*, tm.role FROM contest_team_members tm JOIN contest_teams t ON t.id=tm.team_id WHERE t.contest_id=$1 AND tm.user_id=$2 AND tm.active AND t.status='ACTIVE'`, [contestRow.id, userId]);
-      registration = reg.rows[0] ? { ...toTeamRegistration(reg.rows[0]), role: reg.rows[0].role, members: await teamMembers(reg.rows[0].id) } : null;
+      if (reg.rows[0]) {
+        const team = reg.rows[0];
+        registration = { ...toTeamRegistration(team), role: team.role, members: await teamMembers(team.id) };
+        if (slug === EXECUTE) {
+          const leader = (await pool.query("SELECT enrollment_no FROM users WHERE id=$1", [team.leader_user_id])).rows[0];
+          registration.seatingPlan = getSeatingPlan(leader?.enrollment_no, team.team_name);
+        }
+      }
     } else {
       const reg = await pool.query("SELECT * FROM contest_registrations WHERE contest_id = $1 AND user_id = $2", [contestRow.id, userId]);
       registration = reg.rows[0] ? toPublicRegistration(reg.rows[0]) : null;

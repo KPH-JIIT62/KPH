@@ -19,6 +19,7 @@ import type { ContestDetail, ContestRegistration } from "@/types/contest";
 import AITextLoading from "@/components/ui/ai-text-loading";
 
 type State = { status: "loading" | "ready" | "notfound" | "error"; detail: ContestDetail | null; error: string };
+const EXECUTE_SEATING_PLACEHOLDER = "Seating plan will be updated at 1200 hours on 31st October 2026";
 
 export default function ContestPage() {
   const { slug } = useParams<{ slug: string }>();
@@ -44,6 +45,34 @@ export default function ContestPage() {
       cancelled = true;
     };
   }, [api, slug, attempt]);
+
+  // Read the seating CSV on the server every 30 seconds while this registered Execute team is viewing the page.
+  // This picks up a replaced CSV at runtime without requiring another application build.
+  const executeTeamRegistrationId = slug === "execute-26-4" ? state.detail?.registration?.id : null;
+  useEffect(() => {
+    if (!executeTeamRegistrationId) return;
+    let cancelled = false;
+    const refreshSeating = () => {
+      api<ContestDetail>(`/api/contests/${encodeURIComponent(slug)}`)
+        .then((fresh) => {
+          if (!cancelled) {
+            setState((current) => current.detail ? {
+              ...current,
+              detail: {
+                ...current.detail,
+                registration: current.detail.registration
+                  ? { ...current.detail.registration, seatingPlan: fresh.registration?.seatingPlan }
+                  : null,
+              },
+            } : current);
+          }
+        })
+        .catch(() => {}); // keep the last displayed plan if a transient request fails
+    };
+    refreshSeating();
+    const timer = window.setInterval(refreshSeating, 30_000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [api, slug, executeTeamRegistrationId]);
 
   // Takes the person out of this contest. The server decides whether it is still early enough; if it is not, the error
   // message it sends is shown by the confirmation panel. On success the page falls back to the registration form
@@ -127,6 +156,7 @@ export default function ContestPage() {
       {(() => {
         if (registration) {
           return (
+            <div className={slug === "execute-26-4" ? "execute-registration-columns" : undefined}>
             <div className="profile-panel">
               {contest.mandatory && <span className="status-pill is-mandatory">MANDATORY</span>}
               <span className="status-pill is-done">
@@ -158,6 +188,21 @@ export default function ContestPage() {
                   <WithdrawRegistration contest={contest} onWithdraw={withdraw} />
                 )
               )}
+            </div>
+            {slug === "execute-26-4" && (
+              <aside className="profile-panel execute-seating-panel" aria-live="polite">
+                <h2>Seating Plan</h2>
+                <dl className="summary-list">
+                  <dt>Team Name</dt><dd>{registration.seatingPlan?.teamName || registration.teamName || "—"}</dd>
+                  <dt>Hall Name</dt><dd>{registration.seatingPlan?.hallName || "—"}</dd>
+                  <dt>Lab Number</dt><dd>{registration.seatingPlan?.labNumber || "—"}</dd>
+                  <dt>System Number</dt><dd>{registration.seatingPlan?.systemNumber || "—"}</dd>
+                </dl>
+                {(registration.seatingPlan?.message || (!registration.seatingPlan ? EXECUTE_SEATING_PLACEHOLDER : null)) && (
+                  <p className="panel-help">{registration.seatingPlan?.message || EXECUTE_SEATING_PLACEHOLDER}</p>
+                )}
+              </aside>
+            )}
             </div>
           );
         }
