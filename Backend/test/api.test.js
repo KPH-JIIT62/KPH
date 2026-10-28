@@ -148,6 +148,12 @@ describe("display name cleaning", () => {
     assert.equal(cleanDisplayName("Ravi McDonald", "x@y.z"), "Ravi McDonald");
     assert.equal(cleanDisplayName("Agent 007", "x@y.z"), "Agent 007");
   });
+  test("removes the trailing J only for current first- and third-year campus 128 students", () => {
+    assert.equal(cleanDisplayName("FIRST STUDENT J992601030011", "992601030011@mail.jiit.ac.in"), "First Student");
+    assert.equal(cleanDisplayName("THIRD STUDENT J992401030011", "992401030011@mail.jiit.ac.in"), "Third Student");
+    assert.equal(cleanDisplayName("SECOND J STUDENT J992501030011", "992501030011@mail.jiit.ac.in"), "Second J Student J");
+    assert.equal(cleanDisplayName("FIRST STUDENT J2601030011", "2601030011@mail.jiit.ac.in"), "First Student J");
+  });
   test("falls back to the email when nothing is left", () => {
     assert.equal(cleanDisplayName("9921103001", "prof.sharma@mail.jiit.ac.in"), "Prof Sharma");
     assert.equal(cleanDisplayName("", "prof.sharma@mail.jiit.ac.in"), "Prof Sharma");
