@@ -9,6 +9,8 @@
 //   "Name <992501030399@mail.jiit.ac.in>"
 const INVISIBLE = /[\u200B-\u200D\u2060\uFEFF]/g; // zero-width characters that can hide inside a name
 const EMAIL = /[<(\[{]?[^\s<>()\[\]{}]*@[^\s<>()\[\]{}]*[>)\]}]?/g; // an email address, with any brackets around it
+const { enrollmentFromEmail } = require("./enrollment");
+const { describeAcademic } = require("./academic");
 
 // Whatever can sit around an enrollment number: spaces, brackets and QUOTE MARKS of every kind.
 // Quote marks matter: campus-128 accounts carry the number with an apostrophe in front (NAME '992501030314), the way a
@@ -30,6 +32,14 @@ function cleanDisplayName(rawName, email = "") {
     .replace(/\s+/g, " ")
     .replace(EDGE_JUNK, "")
     .trim();
+  // Campus 128 first- and third-year accounts use "NAME J<enrollment>". The
+  // enrollment number is removed above; remove its separator J only for those
+  // cohorts so genuine names and every other campus/year keep their final J.
+  const enrollmentNo = enrollmentFromEmail(email);
+  const academic = enrollmentNo ? describeAcademic(enrollmentNo, new Date()) : null;
+  if (academic?.campus === "128" && [1, 3].includes(academic.yearOfStudy)) {
+    name = name.replace(/\s+J$/i, "").trim();
+  }
   if (!name) {
     // Nothing usable left: build a name from the email, "prof.sharma@..." -> "Prof Sharma".
     name = String(email).split("@")[0].split(/[._-]+/).filter(Boolean).join(" ") || "Member";
