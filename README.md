@@ -139,7 +139,7 @@ The current backend logic treats these as the minimum required profile fields:
 - enrollment number
 - batch (typed by the student)
 - branch (**detected by the server** from campus + batch, never typed)
-- Year of Study (**detected by the server** from the enrollment number and today's date, never typed or stored)
+- Year of Study (**detected by the server** from the enrollment number and today's date, never typed by the student)
 
 The onboarding form and profile validation are deliberately focused on these values. Coding handles like Codeforces, CodeChef, LeetCode, and HackerRank are optional and can be added later.
 
@@ -171,10 +171,10 @@ The CSV is the **full** list: the database is made to match it, so deleting a li
 
 All rules are data in **one file: `Backend/src/config/academic.js`** (campuses and their enrollment-number formats, batch letter -> branch per campus with optional admission-year ranges, the July 20 academic-year start, programme length). The logic that reads it is `Backend/src/utils/academic.js`. To add a campus, batch or branch, edit the tables in the config file only.
 
-- Campus 62 enrollment numbers: `YY` + 8 digits (e.g. `2501030069`). Campus 128: `99` + `YY` + 8 digits (e.g. `992501030069`).
-- Year of Study = current academic year - admission year + 1. The academic year starts on **July 20** (India time), so it changes by itself; nothing year-related is stored in the database.
+- Campus 62 enrollment numbers: `YY` + 8 digits (e.g. `2501030069`). Campus 128: `99` + `YY` + 8 digits (e.g. `992501030069`). The detected campus is stored as `users.campus` (`Campus 62` or `Campus 128`) and profile reads use that value.
+- Year of Study = current academic year - admission year + 1. The academic year starts on **July 20** (India time). The resulting value is stored in `users.year_of_study`; the API refreshes it once per academic year, while normal profile reads use the stored value.
 - Branch = the batch letter looked up for the student's campus (and admission year: e.g. `H` = IT on campus 62 only from the 2026 intake).
-- `branch` and `yearOfStudy` sent by a client are ignored; the API returns the derived values in `profile.academic`.
+- `branch` and `yearOfStudy` sent by a client are ignored; the API returns the server-detected branch and stored Year of Study in `profile.academic`.
 - Students who think their details are wrong are told to contact `kph.jiit@gmail.com`; there is no in-app correction flow.
 
 ### Important behavior
@@ -295,20 +295,17 @@ VALUES ('resume-workshop', 'Resume Workshop', 'How to write a resume that gets n
         '2026-11-05 17:00+05:30', '2026-11-05 18:00+05:30');
 ```
 
-Attendee list for a session (Year of Study is not stored, so the query works it out from the enrollment number and the July 20 rule):
+Attendee list for a session (Year of Study is read from the saved user profile):
 
 ```sql
 WITH people AS (
-  SELECT u.enrollment_no, u.display_name, u.batch, u.branch, r.created_at AS registered_at,
-         2000 + (CASE WHEN length(u.enrollment_no) = 12 THEN substr(u.enrollment_no, 3, 2) ELSE substr(u.enrollment_no, 1, 2) END)::int AS admission_year,
-         EXTRACT(YEAR FROM (now() AT TIME ZONE 'Asia/Kolkata'))::int
-           - CASE WHEN (now() AT TIME ZONE 'Asia/Kolkata')::date < make_date(EXTRACT(YEAR FROM (now() AT TIME ZONE 'Asia/Kolkata'))::int, 7, 20) THEN 1 ELSE 0 END AS academic_year
+  SELECT u.enrollment_no, u.display_name, u.batch, u.branch, u.year_of_study, r.created_at AS registered_at
     FROM session_registrations r
     JOIN sessions s ON s.id = r.session_id
     JOIN users u    ON u.id = r.user_id
    WHERE s.slug = 'interview-talks-by-seniors'
 )
-SELECT enrollment_no, display_name, batch, branch, academic_year - admission_year + 1 AS year_of_study, registered_at
+SELECT enrollment_no, display_name, batch, branch, year_of_study, registered_at
   FROM people ORDER BY registered_at;
 ```
 

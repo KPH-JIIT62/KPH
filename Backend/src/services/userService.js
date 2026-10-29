@@ -2,14 +2,13 @@
 // Controllers never write SQL and this file never touches req/res, so each can change independently.
 const { HttpError } = require("../utils/HttpError");
 const { enrollmentFromEmail } = require("../utils/enrollment");
-const { describeAcademic, deriveAcademic, yearInputMatches } = require("../utils/academic");
+const { currentAcademicYear, describeAcademicFromStored, deriveAcademic, parseEnrollment, yearInputMatches, yearOfStudyFor } = require("../utils/academic");
 const { SUPPORT_EMAIL } = require("../config/academic");
 const { createCoreTeamService } = require("./coreTeamService");
 
 // The only shape of a user the API ever returns (camelCase, no firebase_uid).
-// `profile.academic` is DERIVED, never stored: campus, admission year and Year of Study come from the enrollment
-// number and today's date (so Year of Study changes by itself on July 20), and `batchBranches` lists the batch
-// letters this person may pick with the branch each one gives (the form uses it for instant feedback).
+// Campus and Year of Study are read from the user row. Admission year and batch options are derived from the
+// enrollment number for display and validation.
 // `role` is the account role (everyone who signs in with an enrollment number is a STUDENT). `coreTeamRole` is
 // separate and ADDITIONAL: "COORDINATOR" or "VOLUNTEER" if they are on the core team roster, otherwise null.
 function toPublicUser(row, now = new Date(), coreTeamRole = null) {
@@ -28,7 +27,7 @@ function toPublicUser(row, now = new Date(), coreTeamRole = null) {
       leetcodeHandle: row.leetcode_handle,
       codechefHandle: row.codechef_handle,
       hackerrankHandle: row.hackerrank_handle,
-      academic: describeAcademic(row.enrollment_no, now),
+      academic: describeAcademicFromStored(row.enrollment_no, row.campus, row.year_of_study, now),
     },
     profileCompleted: row.profile_completed_at !== null,
     createdAt: row.created_at,
@@ -82,16 +81,21 @@ function createUserService(pool, { now = () => new Date(), coreTeam = createCore
     }
     try {
       const enrollmentNo = enrollmentFromEmail(email);
+      const parsedEnrollment = parseEnrollment(enrollmentNo);
+      const campus = parsedEnrollment.ok ? `Campus ${parsedEnrollment.campus}` : null;
+      const studyYear = parsedEnrollment.ok ? yearOfStudyFor(parsedEnrollment.admissionYear, now()) : null;
+      const yearOfStudy = studyYear?.ok ? studyYear.yearOfStudy : null;
+      const academicYear = parsedEnrollment.ok ? currentAcademicYear(now()) : null;
       const isAdmin = await checkAdminStatus(email, enrollmentNo);
       const initialRole = isAdmin ? "ADMIN" : "STUDENT";
       // ON CONFLICT DO NOTHING makes this safe if two requests from a brand-new user arrive at once:
       // the database lets exactly one INSERT win, so no duplicate users.
       const { rows } = await pool.query(
-        `INSERT INTO users (firebase_uid, email, display_name, photo_url, enrollment_no, role)
-         VALUES ($1, $2, $3, $4, $5, $6)
+        `INSERT INTO users (firebase_uid, email, display_name, photo_url, enrollment_no, campus, year_of_study, year_of_study_academic_year, role)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          ON CONFLICT (firebase_uid) DO NOTHING
          RETURNING *`,
-        [uid, email, displayName, photoUrl, enrollmentNo, initialRole],
+        [uid, email, displayName, photoUrl, enrollmentNo, campus, yearOfStudy, academicYear, initialRole],
       );
       return rows[0] ?? (await findByFirebaseUid(uid)); // we lost the race: read the winner's row
     } catch (error) {
@@ -170,6 +174,18 @@ function createUserService(pool, { now = () => new Date(), coreTeam = createCore
         params.push(profile[key]);
         sets.push(`${column} = $${params.length}`);
       }
+      if (profile.yearOfStudy !== undefined) {
+        params.push(profile.yearOfStudy);
+        sets.push(`year_of_study = $${params.length}`);
+      }
+      if (profile.campus !== undefined) {
+        params.push(profile.campus);
+        sets.push(`campus = $${params.length}`);
+      }
+      if (profile.yearOfStudyAcademicYear !== undefined) {
+        params.push(profile.yearOfStudyAcademicYear);
+        sets.push(`year_of_study_academic_year = $${params.length}`);
+      }
       sets.push("profile_completed_at = COALESCE(profile_completed_at, now())", "updated_at = now()");
       let row;
       try {
@@ -203,14 +219,17 @@ function createUserService(pool, { now = () => new Date(), coreTeam = createCore
       if (!result.ok) throw new HttpError(400, "VALIDATION_ERROR", "Please fix the highlighted fields.", { [result.field]: result.message });
       next.batch = result.batch;
       next.branch = result.branch;
+      next.yearOfStudy = result.yearOfStudy;
+      next.yearOfStudyAcademicYear = currentAcademicYear(now());
+      next.campus = `Campus ${result.campus}`;
     } else {
       delete next.batch;
     }
     return next;
   }
 
-  // What we know about a person's campus / Year of Study right now (used by contest registration).
-  const academicOf = (row) => describeAcademic(row.enrollment_no, now());
+  // Academic profile details used by contest and session registration; Year of Study comes from the saved row.
+  const academicOf = (row) => describeAcademicFromStored(row.enrollment_no, row.campus, row.year_of_study, now());
   // The rule EVERY registration (contests, sessions...) applies to the person registering, in one place.
   // `me` is their saved user row. Registration is only for people with a finished profile and a valid Year of Study,
   // and a client may not claim a different Year of Study than the profile's: it is refused, not quietly ignored.
@@ -247,4 +266,37 @@ function createUserService(pool, { now = () => new Date(), coreTeam = createCore
   return { findOrCreateFromFirebase, prepareProfileUpdate, updateProfile, setHackerrankHandle, academicOf, assertProfileReadyToRegister, coreTeamRoleOf, toPublic };
 }
 
-module.exports = { createUserService, toPublicUser };
+// Called on API startup and periodically. The marker makes this a no-op except when the
+// academic year changes, so profile reads never recalculate Year of Study.
+async function refreshStoredYearOfStudy(pool, now = new Date()) {
+  const academicYear = currentAcademicYear(now);
+  await pool.query(
+    `WITH parsed AS (
+       SELECT id,
+              CASE
+                WHEN enrollment_no ~ '^99[0-9]{10}$' THEN 2000 + substring(enrollment_no FROM 3 FOR 2)::INTEGER
+                WHEN enrollment_no ~ '^[0-9]{10}$' THEN 2000 + substring(enrollment_no FROM 1 FOR 2)::INTEGER
+                ELSE NULL
+              END AS admission_year
+         FROM users
+     ), calculated AS (
+       SELECT id, $1::INTEGER AS academic_year, $1::INTEGER - admission_year + 1 AS year_of_study
+         FROM parsed
+     )
+     UPDATE users u
+        SET campus = CASE
+              WHEN u.enrollment_no ~ '^99[0-9]{10}$' THEN 'Campus 128'
+              WHEN u.enrollment_no ~ '^[0-9]{10}$' THEN 'Campus 62'
+              ELSE NULL
+            END,
+            year_of_study = CASE WHEN calculated.year_of_study BETWEEN 1 AND 4 THEN calculated.year_of_study ELSE NULL END,
+            year_of_study_academic_year = calculated.academic_year,
+            updated_at = now()
+       FROM calculated
+      WHERE calculated.id = u.id
+        AND u.year_of_study_academic_year IS DISTINCT FROM calculated.academic_year`,
+    [academicYear],
+  );
+}
+
+module.exports = { createUserService, toPublicUser, refreshStoredYearOfStudy };

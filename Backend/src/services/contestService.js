@@ -132,7 +132,7 @@ function createContestService(pool, userService, { now = () => new Date() } = {}
   }
 
   async function mandatoryFor(userId) {
-    const row = (await pool.query("SELECT enrollment_no, branch FROM users WHERE id=$1", [userId])).rows[0];
+    const row = (await pool.query("SELECT enrollment_no, campus, year_of_study, branch FROM users WHERE id=$1", [userId])).rows[0];
     return { mandatory: isExecuteMandatory(row, now()) };
   }
   const toTeamRegistration = (row) => ({ id: row.team_id ?? row.id, teamName: row.team_name, hackerrankHandle: row.team_hackerrank_handle ?? row.hackerrank_handle, createdAt: row.team_created_at ?? row.created_at, status: row.team_status ?? row.status });
