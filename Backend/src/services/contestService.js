@@ -5,6 +5,7 @@
 const { HttpError } = require("../utils/HttpError");
 const { registrationStatus, withdrawalDeadline, withdrawalOpen, WITHDRAWAL_CUTOFF_MINUTES, EXECUTE_WITHDRAWAL_CUTOFF } = require("../utils/contestStatus");
 const { isExecuteMandatory } = require("../utils/executeEligibility");
+const { getSeatingPlan } = require("../utils/executeSeatingPlan");
 const EXECUTE = "execute-26-4";
 
 // `at` is "now". The status is worked out here, on the server, so the browser can never get it wrong.
@@ -70,7 +71,14 @@ function createContestService(pool, userService, { now = () => new Date() } = {}
     let registration = null;
     if (isTeam) {
       const reg = await pool.query(`SELECT t.*, tm.role FROM contest_team_members tm JOIN contest_teams t ON t.id=tm.team_id WHERE t.contest_id=$1 AND tm.user_id=$2 AND tm.active AND t.status='ACTIVE'`, [contestRow.id, userId]);
-      registration = reg.rows[0] ? { ...toTeamRegistration(reg.rows[0]), role: reg.rows[0].role, members: await teamMembers(reg.rows[0].id) } : null;
+      if (reg.rows[0]) {
+        const team = reg.rows[0];
+        registration = { ...toTeamRegistration(team), role: team.role, members: await teamMembers(team.id) };
+        if (slug === EXECUTE) {
+          const leader = (await pool.query("SELECT enrollment_no FROM users WHERE id=$1", [team.leader_user_id])).rows[0];
+          registration.seatingPlan = getSeatingPlan(leader?.enrollment_no, team.team_name);
+        }
+      }
     } else {
       const reg = await pool.query("SELECT * FROM contest_registrations WHERE contest_id = $1 AND user_id = $2", [contestRow.id, userId]);
       registration = reg.rows[0] ? toPublicRegistration(reg.rows[0]) : null;
@@ -124,7 +132,7 @@ function createContestService(pool, userService, { now = () => new Date() } = {}
   }
 
   async function mandatoryFor(userId) {
-    const row = (await pool.query("SELECT enrollment_no, branch FROM users WHERE id=$1", [userId])).rows[0];
+    const row = (await pool.query("SELECT enrollment_no, campus, year_of_study, branch FROM users WHERE id=$1", [userId])).rows[0];
     return { mandatory: isExecuteMandatory(row, now()) };
   }
   const toTeamRegistration = (row) => ({ id: row.team_id ?? row.id, teamName: row.team_name, hackerrankHandle: row.team_hackerrank_handle ?? row.hackerrank_handle, createdAt: row.team_created_at ?? row.created_at, status: row.team_status ?? row.status });
@@ -166,9 +174,14 @@ function createContestService(pool, userService, { now = () => new Date() } = {}
         throw new HttpError(400, "NOT_ENOUGH_MEMBERS", `This contest requires a minimum of ${minMembers} member(s) per team.`);
       }
 
-      if (contest.hackerrank_required && !hackerrankHandle) {
+      if ((slug === EXECUTE || contest.hackerrank_required) && !hackerrankHandle) {
         throw new HttpError(400, "VALIDATION_ERROR", "Team HackerRank ID is required for this contest.", {
           hackerrankHandle: "Team HackerRank ID is required.",
+        });
+      }
+      if (hackerrankHandle && !/^[A-Za-z0-9_.-]{1,40}$/.test(hackerrankHandle)) {
+        throw new HttpError(400, "VALIDATION_ERROR", "Please enter a valid HackerRank ID (up to 40 letters, numbers, dots, underscores, or hyphens).", {
+          hackerrankHandle: "HackerRank username should be letters, digits, _ . or - (up to 40 characters).",
         });
       }
 
@@ -214,8 +227,16 @@ function createContestService(pool, userService, { now = () => new Date() } = {}
       for (const id of memberIds) {
         await client.query("INSERT INTO contest_team_members(team_id,user_id,role) VALUES($1,$2,'MEMBER')", [team.id, id]);
       }
+      const updatedLeader = hackerrankHandle
+        ? await userService.setHackerrankHandle(userId, hackerrankHandle, client)
+        : null;
       await client.query("COMMIT");
-      return { ...toTeamRegistration(team), members: await teamMembers(team.id), role: "LEADER" };
+      return {
+        ...toTeamRegistration(team),
+        members: await teamMembers(team.id),
+        role: "LEADER",
+        ...(updatedLeader ? { user: await userService.toPublic(updatedLeader) } : {}),
+      };
     } catch (error) {
       await client.query("ROLLBACK");
       if (error.code === "23505") throw new HttpError(409, "TEAM_CONFLICT", "A team member or this team identity is already registered. Refresh and try again.");

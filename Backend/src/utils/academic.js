@@ -4,8 +4,8 @@
 // Everything here is a PURE function: the current time is always passed in as `now`, so the July 20
 // rollover can be tested for any date. The rules themselves are data in src/config/academic.js.
 //
-// Year of Study is never stored: it is recomputed from the enrollment number every time it is shown,
-// so it can never go stale when a new academic year begins.
+// Enrollment validation and academic-year calculations. Persisted profile reads use the saved year;
+// this module calculates it when a profile is first completed or its batch is changed.
 const { SUPPORT_EMAIL, ACADEMIC_YEAR_STARTS, MAX_YEAR_OF_STUDY, CAMPUSES, BATCH_BRANCHES } = require("../config/academic");
 
 const CONTACT = `Contact ${SUPPORT_EMAIL}.`;
@@ -117,6 +117,33 @@ function describeAcademic(enrollmentNo, now) {
   };
 }
 
+// Normal account reads use the saved campus and year. Enrollment parsing here supplies only
+// admission-year metadata; campus itself always comes from the stored users.campus value.
+function describeAcademicFromStored(enrollmentNo, storedCampus, yearOfStudy, now) {
+  const campus = storedCampus === "Campus 62" ? "62" : storedCampus === "Campus 128" ? "128" : null;
+  const enrollment = parseEnrollment(enrollmentNo);
+  if (!enrollment.ok) {
+    const fallback = describeAcademic(enrollmentNo, now);
+    return {
+      ...fallback,
+      campus,
+      campusLabel: storedCampus,
+      yearOfStudy: yearOfStudy ?? fallback.yearOfStudy,
+      yearOfStudyLabel: yearLabel(yearOfStudy) ?? fallback.yearOfStudyLabel,
+    };
+  }
+  const fallback = yearOfStudy ? null : describeAcademic(enrollmentNo, now);
+  return {
+    campus,
+    campusLabel: storedCampus,
+    admissionYear: enrollment.admissionYear,
+    yearOfStudy: yearOfStudy ?? fallback.yearOfStudy,
+    yearOfStudyLabel: yearLabel(yearOfStudy) ?? fallback.yearOfStudyLabel,
+    batchBranches: campus ? batchOptionsFor(campus, enrollment.admissionYear) : {},
+    error: yearOfStudy ? null : fallback.error,
+  };
+}
+
 // The full check used when SAVING: enrollment number + batch must both be valid and compatible.
 function deriveAcademic({ enrollmentNo, batch, now }) {
   const enrollment = parseEnrollment(enrollmentNo);
@@ -145,6 +172,7 @@ module.exports = {
   batchOptionsFor,
   branchFor,
   describeAcademic,
+  describeAcademicFromStored,
   deriveAcademic,
   yearInputMatches,
   yearLabel,

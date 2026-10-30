@@ -6,6 +6,7 @@ const { createPool } = require("../src/db/pool");
 const { createApp } = require("../src/app");
 const { migrate } = require("../scripts/migrate");
 const { createFirebaseVerifier } = require("../src/config/firebase");
+const { refreshStoredYearOfStudy } = require("../src/services/userService");
 
 const url = process.env.TEST_DATABASE_URL;
 if (!url) {
@@ -148,6 +149,12 @@ describe("display name cleaning", () => {
     assert.equal(cleanDisplayName("Ravi McDonald", "x@y.z"), "Ravi McDonald");
     assert.equal(cleanDisplayName("Agent 007", "x@y.z"), "Agent 007");
   });
+  test("removes the trailing J only for current first- and third-year campus 128 students", () => {
+    assert.equal(cleanDisplayName("FIRST STUDENT J992601030011", "992601030011@mail.jiit.ac.in"), "First Student");
+    assert.equal(cleanDisplayName("THIRD STUDENT J992401030011", "992401030011@mail.jiit.ac.in"), "Third Student");
+    assert.equal(cleanDisplayName("SECOND J STUDENT J992501030011", "992501030011@mail.jiit.ac.in"), "Second J Student J");
+    assert.equal(cleanDisplayName("FIRST STUDENT J2601030011", "2601030011@mail.jiit.ac.in"), "First Student J");
+  });
   test("falls back to the email when nothing is left", () => {
     assert.equal(cleanDisplayName("9921103001", "prof.sharma@mail.jiit.ac.in"), "Prof Sharma");
     assert.equal(cleanDisplayName("", "prof.sharma@mail.jiit.ac.in"), "Prof Sharma");
@@ -277,6 +284,7 @@ describe("first login and onboarding data", () => {
     const { academic } = (await me("alice")).profile;
     assert.equal(academic.campus, "62");
     assert.equal(academic.campusLabel, "Campus 62");
+    assert.equal((await pool.query("SELECT campus FROM users WHERE enrollment_no = '2501030001'")).rows[0].campus, "Campus 62");
     assert.equal(academic.admissionYear, 2025);
     assert.equal(academic.yearOfStudy, 2);
     assert.equal(academic.yearOfStudyLabel, "2nd Year");
@@ -368,28 +376,27 @@ describe("first login and onboarding data", () => {
     assert.equal((await me("alice")).profileCompleted, false);
     assert.equal((await pool.query("SELECT branch FROM users")).rows[0].branch, null);
   });
-  test("a client cannot set Year of Study: it is not stored anywhere and is derived from the enrollment number", async () => {
+  test("a client cannot set Year of Study: the server stores its derived value on the user", async () => {
     await put("alice", { batch: "B10", yearOfStudy: 4, year: 4, yearOfStudyLabel: "4th Year", admissionYear: 2022, academic: { yearOfStudy: 4 } });
     const user = await me("alice");
     assert.equal(user.profile.academic.yearOfStudy, 2);
     assert.equal(user.profile.academic.admissionYear, 2025);
-    const columns = (await pool.query("SELECT column_name FROM information_schema.columns WHERE table_name = 'users'")).rows.map((r) => r.column_name);
-    assert.ok(!columns.some((c) => /year|campus|admission/i.test(c)), `users has a stored academic-year column: ${columns}`);
+    assert.deepEqual((await pool.query("SELECT year_of_study, campus FROM users")).rows[0], { year_of_study: 2, campus: "Campus 62" });
   });
-  test("Year of Study is recomputed from the date on every request (nothing stale is stored)", async () => {
+  test("profile reads use the stored Year of Study and the rollover refresh updates it once per academic year", async () => {
     await put("alice", { batch: "B10" }); // admitted 2025
     const year = async (iso) => {
       nowValue = new Date(iso);
+      await refreshStoredYearOfStudy(pool, nowValue);
       return (await me("alice")).profile.academic.yearOfStudy;
     };
-    const before = (await pool.query("SELECT updated_at FROM users")).rows[0].updated_at.getTime();
     assert.equal(await year("2026-07-19T23:59:59+05:30"), 1);
     assert.equal(await year("2026-07-20T00:00:00+05:30"), 2);
     assert.equal(await year("2027-07-19T23:59:59+05:30"), 2);
     assert.equal(await year("2027-07-20T00:00:00+05:30"), 3);
     assert.equal(await year("2028-07-20T00:00:00+05:30"), 4);
     assert.equal(await year("2029-07-20T00:00:00+05:30"), null); // past the 4-year programme
-    assert.equal((await pool.query("SELECT updated_at FROM users")).rows[0].updated_at.getTime(), before); // reading never writes
+    assert.equal((await pool.query("SELECT year_of_study FROM users")).rows[0].year_of_study, null);
   });
   test("an enrollment number we cannot read blocks onboarding with a clear message (from the email, or typed)", async () => {
     let res = await put("legacy", { batch: "B10" }); // 9921103001 from the email
@@ -643,6 +650,7 @@ describe("contests and registration", () => {
     const columns = (await pool.query("SELECT column_name FROM information_schema.columns WHERE table_name = 'contest_registrations'")).rows.map((r) => r.column_name);
     assert.ok(!columns.some((c) => /year/i.test(c)), `registration has a year column: ${columns}`);
     nowValue = new Date("2027-07-20T12:00:00+05:30");
+    await refreshStoredYearOfStudy(pool, nowValue);
     assert.equal((await me("alice")).profile.academic.yearOfStudyLabel, "3rd Year"); // the same registration, one rollover later
   });
   test("a client-supplied Year of Study that differs from the profile is refused, and nothing is saved", async () => {

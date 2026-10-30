@@ -18,6 +18,7 @@ import { useAuth } from "@/components/auth-provider";
 import { useAccount } from "@/components/account-provider";
 import { MemberAvatar, ProfileProvider, useProfile } from "@/components/profile-provider";
 import { RoleChips } from "@/components/role-chips";
+import { ExecuteMandatoryReminder } from "@/components/contests/execute-mandatory-reminder";
 
 function ProfileMenu() {
   const pathname = usePathname();
@@ -190,6 +191,7 @@ function ShellContent({ children }: { children: ReactNode }) {
           {children}
         </main>
       </div>
+      <ExecuteMandatoryReminder />
     </div>
   );
 }
