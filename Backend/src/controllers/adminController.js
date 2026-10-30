@@ -25,6 +25,11 @@ function createAdminController(adminService) {
       res.json(await adminService.deleteContest(slug));
     },
 
+    async getContestRegistrations(req, res) {
+      const { slug } = req.params;
+      res.json(await adminService.getContestRegistrations(slug));
+    },
+
     // -------------------------------------------------------------
     // LEADERBOARD & CERTIFICATES
     // -------------------------------------------------------------

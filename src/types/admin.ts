@@ -81,3 +81,62 @@ export type GeneratedCertificate = {
   status: string;
 };
 
+export type RegisteredCandidate = {
+  registrationId: string;
+  userId: string;
+  displayName: string;
+  email: string;
+  enrollmentNo: string;
+  branch: string;
+  batch: string;
+  hackerRankHandle: string;
+  codeforcesHandle?: string;
+  leetcodeHandle?: string;
+  codechefHandle?: string;
+  teamName?: string | null;
+  role: string;
+  registeredAt: string;
+};
+
+export type RegisteredTeamMember = {
+  userId: string;
+  role: string;
+  displayName: string;
+  email: string;
+  enrollmentNo: string;
+  branch: string;
+  batch: string;
+  hackerRankHandle: string;
+  codeforcesHandle?: string;
+  leetcodeHandle?: string;
+  codechefHandle?: string;
+  joinedAt: string;
+};
+
+export type RegisteredTeam = {
+  teamId: string;
+  teamName: string;
+  teamHackerRankHandle: string;
+  registeredAt: string;
+  leaderUserId?: string;
+  members: RegisteredTeamMember[];
+};
+
+export type ContestRegistrationsResponse = {
+  contest: {
+    id: string;
+    slug: string;
+    title: string;
+    participationType: "SOLO" | "TEAM";
+    venue?: string | null;
+    startsAt?: string | null;
+    endsAt?: string | null;
+  };
+  isTeamContest: boolean;
+  totalCount: number;
+  totalIndividualCount: number;
+  teams: RegisteredTeam[];
+  soloParticipants: RegisteredCandidate[];
+  participants: RegisteredCandidate[];
+};
+

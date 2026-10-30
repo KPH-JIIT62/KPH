@@ -26,13 +26,23 @@ import {
   ExternalLink,
   Pencil,
   Save,
+  FileText,
+  Printer,
 } from "lucide-react";
 import { useAccount } from "@/components/account-provider";
 import { useAuth } from "@/components/auth-provider";
 import { useApi } from "@/lib/use-api";
 import { ApiError } from "@/lib/api";
 import { AppLoader } from "@/components/app-loader";
-import type { AdminContest, LeaderboardParticipant, AdminAccessRecord, GeneratedCertificate } from "@/types/admin";
+import type {
+  AdminContest,
+  LeaderboardParticipant,
+  AdminAccessRecord,
+  GeneratedCertificate,
+  ContestRegistrationsResponse,
+  RegisteredCandidate,
+  RegisteredTeam,
+} from "@/types/admin";
 
 type ActiveTab = "contests" | "certificates" | "access";
 
@@ -171,6 +181,14 @@ export default function AdminPage() {
   const [candidateToDelete, setCandidateToDelete] = useState<{ filename: string; name: string } | null>(null);
   const [participantToDelete, setParticipantToDelete] = useState<{ index: number; name: string } | null>(null);
 
+  // Registered Candidates View State
+  const [viewingRegistrationsContest, setViewingRegistrationsContest] = useState<AdminContest | null>(null);
+  const [registrationsData, setRegistrationsData] = useState<ContestRegistrationsResponse | null>(null);
+  const [registrationsLoading, setRegistrationsLoading] = useState(false);
+  const [registrationsError, setRegistrationsError] = useState<string | null>(null);
+  const [registrationsSearch, setRegistrationsSearch] = useState("");
+  const [registrationsViewTab, setRegistrationsViewTab] = useState<"all" | "teams">("all");
+
   // Certificate / Leaderboard State
   const [selectedContestSlug, setSelectedContestSlug] = useState("");
   const [parsedLeaderboard, setParsedLeaderboard] = useState<LeaderboardParticipant[]>([]);
@@ -292,6 +310,43 @@ export default function AdminPage() {
   const selectedContest = useMemo(() => {
     return contests.find((c) => c.slug === selectedContestSlug);
   }, [contests, selectedContestSlug]);
+
+  // Filtered Registered Candidates (placed before Auth Gate to obey Rules of Hooks)
+  const filteredParticipants = useMemo(() => {
+    if (!registrationsData?.participants) return [];
+    const q = registrationsSearch.trim().toLowerCase();
+    if (!q) return registrationsData.participants;
+    return registrationsData.participants.filter((p) => {
+      return (
+        (p.displayName && p.displayName.toLowerCase().includes(q)) ||
+        (p.enrollmentNo && p.enrollmentNo.toLowerCase().includes(q)) ||
+        (p.email && p.email.toLowerCase().includes(q)) ||
+        (p.hackerRankHandle && p.hackerRankHandle.toLowerCase().includes(q)) ||
+        (p.branch && p.branch.toLowerCase().includes(q)) ||
+        (p.batch && p.batch.toLowerCase().includes(q)) ||
+        (p.teamName && p.teamName.toLowerCase().includes(q))
+      );
+    });
+  }, [registrationsData, registrationsSearch]);
+
+  const filteredTeams = useMemo(() => {
+    if (!registrationsData?.teams) return [];
+    const q = registrationsSearch.trim().toLowerCase();
+    if (!q) return registrationsData.teams;
+    return registrationsData.teams.filter((t) => {
+      const matchTeam =
+        (t.teamName && t.teamName.toLowerCase().includes(q)) ||
+        (t.teamHackerRankHandle && t.teamHackerRankHandle.toLowerCase().includes(q));
+      const matchMember = t.members.some(
+        (m) =>
+          (m.displayName && m.displayName.toLowerCase().includes(q)) ||
+          (m.enrollmentNo && m.enrollmentNo.toLowerCase().includes(q)) ||
+          (m.email && m.email.toLowerCase().includes(q)) ||
+          (m.branch && m.branch.toLowerCase().includes(q))
+      );
+      return matchTeam || matchMember;
+    });
+  }, [registrationsData, registrationsSearch]);
 
   // Auth Protection Gate
   if (status === "loading" || loading) return <AppLoader />;
@@ -907,6 +962,235 @@ export default function AdminPage() {
     }
   }
 
+  // Registered Candidates Handlers
+  async function handleViewRegistrations(contest: AdminContest) {
+    setViewingRegistrationsContest(contest);
+    setRegistrationsData(null);
+    setRegistrationsError(null);
+    setRegistrationsSearch("");
+    setRegistrationsViewTab("all");
+    setRegistrationsLoading(true);
+
+    try {
+      const data = await api<ContestRegistrationsResponse>(`/api/admin/contests/${contest.slug}/registrations`);
+      setRegistrationsData(data);
+    } catch (err: unknown) {
+      setRegistrationsError(err instanceof Error ? err.message : "Failed to load registered candidates.");
+    } finally {
+      setRegistrationsLoading(false);
+    }
+  }
+
+  function handleCloseRegistrationsModal() {
+    setViewingRegistrationsContest(null);
+    setRegistrationsData(null);
+    setRegistrationsError(null);
+    setRegistrationsSearch("");
+  }
+
+  function handleExportRegistrationsCSV() {
+    if (!registrationsData || !viewingRegistrationsContest) return;
+    const participants = registrationsData.participants || [];
+    const isTeam = registrationsData.isTeamContest;
+
+    const headers = [
+      "Index",
+      "Candidate Name",
+      "Enrollment No",
+      "Email",
+      "Branch",
+      "Batch",
+      "HackerRank Handle",
+      ...(isTeam ? ["Team Name", "Role"] : []),
+      "Registered Date (IST)",
+    ];
+
+    const rows = participants.map((p, idx) => {
+      const dateStr = p.registeredAt ? new Date(p.registeredAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }) : "";
+      const row = [
+        idx + 1,
+        `"${(p.displayName || "").replace(/"/g, '""')}"`,
+        `"${p.enrollmentNo || ""}"`,
+        `"${p.email || ""}"`,
+        `"${p.branch || ""}"`,
+        `"${p.batch || ""}"`,
+        `"${p.hackerRankHandle || ""}"`,
+        ...(isTeam ? [`"${(p.teamName || "").replace(/"/g, '""')}"`, `"${p.role || ""}"`] : []),
+        `"${dateStr}"`,
+      ];
+      return row.join(",");
+    });
+
+    const csvContent = "\uFEFF" + [headers.join(","), ...rows].join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${viewingRegistrationsContest.slug}-registrations.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
+
+  function handleExportRegistrationsJSON() {
+    if (!registrationsData || !viewingRegistrationsContest) return;
+    const jsonStr = JSON.stringify(registrationsData, null, 2);
+    const blob = new Blob([jsonStr], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${viewingRegistrationsContest.slug}-registrations.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
+
+  function handleExportRegistrationsTXT() {
+    if (!registrationsData || !viewingRegistrationsContest) return;
+    const participants = registrationsData.participants || [];
+    const isTeam = registrationsData.isTeamContest;
+    const title = viewingRegistrationsContest.title;
+    const dateGenerated = new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
+
+    let txt = `================================================================================\n`;
+    txt += `KNUTH PROGRAMMING HUB - CONTEST REGISTRATIONS LIST\n`;
+    txt += `Contest: ${title} (${viewingRegistrationsContest.slug})\n`;
+    txt += `Total Registered: ${registrationsData.totalCount} ${isTeam ? "teams" : "candidates"}\n`;
+    txt += `Total Individuals: ${registrationsData.totalIndividualCount}\n`;
+    txt += `Exported: ${dateGenerated} IST\n`;
+    txt += `================================================================================\n\n`;
+
+    participants.forEach((p, idx) => {
+      const regTime = p.registeredAt ? new Date(p.registeredAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }) : "N/A";
+      txt += `${String(idx + 1).padStart(3, " ")}. ${p.displayName}\n`;
+      txt += `     Enrollment: ${p.enrollmentNo || "N/A"}  |  Branch/Batch: ${p.branch || "—"} / ${p.batch || "—"}\n`;
+      txt += `     Email: ${p.email}  |  HackerRank: ${p.hackerRankHandle || "—"}\n`;
+      if (isTeam) {
+        txt += `     Team: ${p.teamName || "—"} (${p.role || "MEMBER"})\n`;
+      }
+      txt += `     Registered At: ${regTime}\n`;
+      txt += `--------------------------------------------------------------------------------\n`;
+    });
+
+    const blob = new Blob([txt], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${viewingRegistrationsContest.slug}-registrations.txt`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
+
+  function handlePrintOrSavePDF() {
+    if (!registrationsData || !viewingRegistrationsContest) return;
+    const participants = registrationsData.participants || [];
+    const isTeam = registrationsData.isTeamContest;
+    const title = viewingRegistrationsContest.title;
+    const dateGenerated = new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
+
+    const printWin = window.open("", "_blank");
+    if (!printWin) {
+      alert("Please allow popups to open the printable PDF document.");
+      return;
+    }
+
+    const tableRows = participants
+      .map((p, idx) => {
+        const regTime = p.registeredAt
+          ? new Date(p.registeredAt).toLocaleString("en-IN", {
+              timeZone: "Asia/Kolkata",
+              dateStyle: "medium",
+              timeStyle: "short",
+            })
+          : "—";
+        return `<tr>
+          <td style="text-align:center;font-weight:bold;">${idx + 1}</td>
+          <td><strong>${p.displayName || "—"}</strong></td>
+          <td style="font-family:monospace;">${p.enrollmentNo || "—"}</td>
+          <td>${p.branch || "—"} · ${p.batch || "—"}</td>
+          <td style="font-family:monospace;">${p.hackerRankHandle || "—"}</td>
+          <td style="font-size:11px;">${p.email || "—"}</td>
+          ${isTeam ? `<td><strong>${p.teamName || "—"}</strong> <span style="font-size:10px;color:#666;">(${p.role})</span></td>` : ""}
+          <td style="font-size:11px;white-space:nowrap;">${regTime}</td>
+        </tr>`;
+      })
+      .join("");
+
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Registrations - ${title}</title>
+  <style>
+    @page { size: A4 landscape; margin: 12mm; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 12px; color: #111; margin: 0; padding: 15px; }
+    .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #8dc63f; padding-bottom: 12px; margin-bottom: 15px; }
+    .title { font-size: 20px; font-weight: 800; color: #111; }
+    .subtitle { font-size: 12px; color: #666; margin-top: 4px; }
+    .badge-bar { display: flex; gap: 10px; margin-top: 6px; }
+    .badge { background: #f0f7e6; color: #437a12; padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+    .meta { text-align: right; font-size: 11px; color: #666; }
+    table { width: 100%; border-collapse: collapse; font-size: 11px; }
+    th { background: #f4f4f4; border: 1px solid #ddd; padding: 7px 6px; text-align: left; font-weight: 700; text-transform: uppercase; font-size: 10px; letter-spacing: 0.5px; }
+    td { border: 1px solid #ddd; padding: 6px; }
+    tr:nth-child(even) { background: #fafafa; }
+    @media print {
+      body { padding: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <div class="title">Knuth Programming Hub</div>
+      <div class="subtitle">Contest Registration Record: <strong>${title}</strong> (${viewingRegistrationsContest.slug})</div>
+      <div class="badge-bar">
+        <span class="badge">${registrationsData.totalCount} Registered</span>
+        <span class="badge">${registrationsData.totalIndividualCount} Individual Participants</span>
+        ${isTeam ? '<span class="badge">Team Contest</span>' : '<span class="badge">Solo Contest</span>'}
+      </div>
+    </div>
+    <div class="meta">
+      <div>Generated: ${dateGenerated} IST</div>
+      <div>Official KPH Admin Report</div>
+    </div>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th style="width:30px;text-align:center;">#</th>
+        <th>Candidate Name</th>
+        <th>Enrollment</th>
+        <th>Branch / Batch</th>
+        <th>HackerRank</th>
+        <th>Email</th>
+        ${isTeam ? "<th>Team / Role</th>" : ""}
+        <th>Registered At</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${tableRows}
+    </tbody>
+  </table>
+  <script>
+    window.onload = function() {
+      setTimeout(function() {
+        window.print();
+      }, 300);
+    };
+  </script>
+</body>
+</html>`;
+
+    printWin.document.open();
+    printWin.document.write(html);
+    printWin.document.close();
+  }
+
   // Admin Access Submissions
   async function handleAddAdmin(e: FormEvent) {
     e.preventDefault();
@@ -1147,8 +1431,18 @@ export default function AdminPage() {
                           </div>
                         </td>
                         <td className="px-4 py-3.5">
-                          <span className="font-semibold text-[var(--text)]">{contest.registrationsCount}</span>
-                          <span className="text-[var(--muted)]"> registered</span>
+                          <button
+                            type="button"
+                            onClick={() => handleViewRegistrations(contest)}
+                            className="group inline-flex items-center gap-1.5 text-left transition hover:text-[var(--accent)]"
+                            title="Click to view full details of registered candidates"
+                          >
+                            <span className="font-semibold text-[var(--text)] group-hover:text-[var(--accent)] group-hover:underline">
+                              {contest.registrationsCount}
+                            </span>
+                            <span className="text-[var(--muted)]"> registered</span>
+                            <Users size={12} className="text-[var(--text-secondary)] opacity-60 transition group-hover:opacity-100 group-hover:text-[var(--accent)]" />
+                          </button>
                         </td>
                         <td className="px-4 py-3.5">
                           <span
@@ -1165,6 +1459,15 @@ export default function AdminPage() {
                         </td>
                         <td className="px-4 py-3.5 text-right">
                           <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handleViewRegistrations(contest)}
+                              title="View Registered Candidates & Details"
+                              aria-label="View Registered Candidates & Details"
+                              className="rounded border border-[var(--border)] p-1.5 text-[var(--text-secondary)] hover:bg-[var(--surface-muted)] hover:border-[var(--accent)] hover:text-[var(--accent)]"
+                            >
+                              <Users size={13} />
+                            </button>
                             <button
                               type="button"
                               onClick={() => handleOpenEditContest(contest)}
@@ -1962,6 +2265,330 @@ export default function AdminPage() {
               </div>
             </div>
           )}
+
+          {/* Registered Candidates Detail Modal */}
+          {viewingRegistrationsContest && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-3 sm:p-6 backdrop-blur-sm">
+              <div className="flex h-full max-h-[92vh] w-full max-w-5xl flex-col rounded-2xl border border-[var(--border)] bg-[var(--surface)] shadow-2xl overflow-hidden">
+                
+                {/* Modal Header */}
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] bg-[var(--surface-muted)] px-5 py-4">
+                  <div className="flex items-center gap-3">
+                    <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
+                      <Users size={20} />
+                    </div>
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="text-base font-bold text-[var(--text)]">
+                          {viewingRegistrationsContest.title}
+                        </h3>
+                        <span className="rounded-full bg-[var(--surface)] border border-[var(--border)] px-2.5 py-0.5 font-mono text-[11px] font-semibold text-[var(--accent)]">
+                          {registrationsData ? `${registrationsData.totalCount} registered` : `${viewingRegistrationsContest.registrationsCount} registered`}
+                        </span>
+                        <span className="rounded bg-[var(--surface)] border border-[var(--border)] px-2 py-0.5 text-[10px] font-medium text-[var(--text-secondary)]">
+                          {viewingRegistrationsContest.participationType === "TEAM" ? "Team Contest" : "Solo Contest"}
+                        </span>
+                      </div>
+                      <p className="mt-0.5 text-xs text-[var(--text-secondary)]">
+                        Complete registered participant submissions & student details fetched from database
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Actions & Export Controls */}
+                  <div className="flex items-center gap-2">
+                    {registrationsData && (registrationsData.participants?.length > 0 || registrationsData.teams?.length > 0) && (
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={handleExportRegistrationsCSV}
+                          title="Download CSV (Excel / Sheets)"
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1.5 text-xs font-semibold text-[var(--text)] hover:bg-[var(--surface-hover)] shadow-sm transition"
+                        >
+                          <Download size={13} className="text-emerald-500" />
+                          <span>CSV</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleExportRegistrationsJSON}
+                          title="Download JSON data"
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1.5 text-xs font-semibold text-[var(--text)] hover:bg-[var(--surface-hover)] shadow-sm transition"
+                        >
+                          <Download size={13} className="text-amber-500" />
+                          <span>JSON</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleExportRegistrationsTXT}
+                          title="Download Formatted Text File"
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1.5 text-xs font-semibold text-[var(--text)] hover:bg-[var(--surface-hover)] shadow-sm transition"
+                        >
+                          <FileText size={13} className="text-sky-500" />
+                          <span>TXT</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handlePrintOrSavePDF}
+                          title="Print or Save as PDF"
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1.5 text-xs font-semibold text-[var(--text)] hover:bg-[var(--surface-hover)] shadow-sm transition"
+                        >
+                          <Printer size={13} className="text-indigo-500" />
+                          <span>PDF</span>
+                        </button>
+                      </div>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={handleCloseRegistrationsModal}
+                      className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-1.5 text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)] transition"
+                      title="Close"
+                      aria-label="Close"
+                    >
+                      <X size={18} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Search & Mode Switcher Bar */}
+                <div className="flex flex-col gap-2.5 border-b border-[var(--border)] bg-[var(--surface)] p-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="relative flex-1 max-w-md">
+                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted)]" />
+                    <input
+                      type="text"
+                      value={registrationsSearch}
+                      onChange={(e) => setRegistrationsSearch(e.target.value)}
+                      placeholder="Search candidate name, enrollment, email, branch, or team..."
+                      className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] pl-9 pr-3 py-1.5 text-xs text-[var(--text)] placeholder-[var(--muted)] focus:border-[var(--accent)] focus:outline-none"
+                    />
+                  </div>
+
+                  {registrationsData?.isTeamContest && (
+                    <div className="flex items-center gap-1 rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] p-1 text-xs">
+                      <button
+                        type="button"
+                        onClick={() => setRegistrationsViewTab("all")}
+                        className={`rounded-md px-3 py-1 font-medium transition ${
+                          registrationsViewTab === "all"
+                            ? "bg-[var(--surface)] text-[var(--text)] shadow-sm font-semibold"
+                            : "text-[var(--text-secondary)] hover:text-[var(--text)]"
+                        }`}
+                      >
+                        All Members ({registrationsData.totalIndividualCount})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setRegistrationsViewTab("teams")}
+                        className={`rounded-md px-3 py-1 font-medium transition ${
+                          registrationsViewTab === "teams"
+                            ? "bg-[var(--surface)] text-[var(--text)] shadow-sm font-semibold"
+                            : "text-[var(--text-secondary)] hover:text-[var(--text)]"
+                        }`}
+                      >
+                        Grouped Teams ({registrationsData.teams?.length || 0})
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Table Content */}
+                <div className="flex-1 overflow-y-auto p-4">
+                  {registrationsLoading ? (
+                    <div className="flex h-64 flex-col items-center justify-center gap-3">
+                      <RefreshCw size={26} className="animate-spin text-[var(--accent)]" />
+                      <p className="text-xs font-medium text-[var(--text-secondary)]">
+                        Fetching registered participants from database...
+                      </p>
+                    </div>
+                  ) : registrationsError ? (
+                    <div className="rounded-xl border border-rose-500/20 bg-rose-500/10 p-4 text-xs text-rose-600 dark:text-rose-400">
+                      {registrationsError}
+                    </div>
+                  ) : !registrationsData || (registrationsData.participants?.length === 0 && registrationsData.teams?.length === 0) ? (
+                    <div className="flex h-64 flex-col items-center justify-center gap-2 text-center">
+                      <Users size={32} className="text-[var(--muted)]" />
+                      <p className="text-sm font-bold text-[var(--text)]">No Registrations Found</p>
+                      <p className="text-xs text-[var(--text-secondary)]">No participants have registered for this contest yet.</p>
+                    </div>
+                  ) : registrationsViewTab === "teams" && registrationsData.isTeamContest ? (
+                    /* Grouped Teams View */
+                    <div className="space-y-4">
+                      {filteredTeams.length === 0 ? (
+                        <div className="py-12 text-center text-xs text-[var(--muted)]">
+                          No teams match your search &quot;{registrationsSearch}&quot;.
+                        </div>
+                      ) : (
+                        filteredTeams.map((team, tIdx) => (
+                          <div
+                            key={team.teamId || tIdx}
+                            className="rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] p-4 space-y-3"
+                          >
+                            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--border)] pb-2.5">
+                              <div className="flex items-center gap-2">
+                                <span className="flex size-6 items-center justify-center rounded-full bg-[var(--surface)] text-[11px] font-bold text-[var(--text)]">
+                                  {tIdx + 1}
+                                </span>
+                                <span className="font-bold text-sm text-[var(--text)]">{team.teamName}</span>
+                                {team.teamHackerRankHandle && (
+                                  <span className="font-mono text-xs text-[var(--muted)]">
+                                    @{team.teamHackerRankHandle}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-3 text-[11px] text-[var(--text-secondary)]">
+                                <span>{team.members.length} members</span>
+                                {team.registeredAt && (
+                                  <span>{new Date(team.registeredAt).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata" })}</span>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3">
+                              {team.members.map((m) => (
+                                <div
+                                  key={m.userId}
+                                  className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3 text-xs space-y-1"
+                                >
+                                  <div className="flex items-center justify-between gap-1">
+                                    <span className="font-bold text-[var(--text)] truncate">{m.displayName}</span>
+                                    <span
+                                      className={`rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${
+                                        m.role === "LEADER"
+                                          ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                                          : "bg-[var(--surface-muted)] text-[var(--text-secondary)]"
+                                      }`}
+                                    >
+                                      {m.role}
+                                    </span>
+                                  </div>
+                                  <div className="font-mono text-[11px] text-[var(--accent)] font-semibold">
+                                    {m.enrollmentNo || "—"}
+                                  </div>
+                                  <div className="text-[11px] text-[var(--text-secondary)] truncate">
+                                    {m.branch || "—"} {m.batch ? `· ${m.batch}` : ""}
+                                  </div>
+                                  <div className="font-mono text-[10px] text-[var(--muted)] truncate">
+                                    {m.email}
+                                  </div>
+                                  {m.hackerRankHandle && (
+                                    <div className="font-mono text-[10px] text-[var(--muted)] truncate">
+                                      HR: @{m.hackerRankHandle}
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  ) : (
+                    /* Flat Table View */
+                    <div className="overflow-x-auto rounded-xl border border-[var(--border)] bg-[var(--surface)]">
+                      <table className="w-full text-left text-xs">
+                        <thead>
+                          <tr className="border-b border-[var(--border)] bg-[var(--surface-muted)] text-[10px] uppercase font-bold tracking-wider text-[var(--muted)]">
+                            <th className="px-3.5 py-3 w-10 text-center">#</th>
+                            <th className="px-3.5 py-3">Candidate</th>
+                            <th className="px-3.5 py-3">Enrollment</th>
+                            <th className="px-3.5 py-3">Branch & Batch</th>
+                            <th className="px-3.5 py-3">HackerRank</th>
+                            {registrationsData.isTeamContest && <th className="px-3.5 py-3">Team & Role</th>}
+                            <th className="px-3.5 py-3">Email</th>
+                            <th className="px-3.5 py-3 text-right">Registered</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[var(--border)]">
+                          {filteredParticipants.length === 0 ? (
+                            <tr>
+                              <td
+                                colSpan={registrationsData.isTeamContest ? 8 : 7}
+                                className="px-4 py-12 text-center text-[var(--muted)]"
+                              >
+                                No candidates match your search &quot;{registrationsSearch}&quot;.
+                              </td>
+                            </tr>
+                          ) : (
+                            filteredParticipants.map((p, idx) => {
+                              const regDate = p.registeredAt
+                                ? new Date(p.registeredAt).toLocaleString("en-IN", {
+                                    timeZone: "Asia/Kolkata",
+                                    month: "short",
+                                    day: "numeric",
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                  })
+                                : "—";
+                              return (
+                                <tr key={p.registrationId || idx} className="hover:bg-[var(--surface-muted)] transition-colors">
+                                  <td className="px-3.5 py-3 text-center font-mono text-[var(--muted)]">
+                                    {idx + 1}
+                                  </td>
+                                  <td className="px-3.5 py-3">
+                                    <div className="font-semibold text-[var(--text)]">{p.displayName || "—"}</div>
+                                  </td>
+                                  <td className="px-3.5 py-3">
+                                    <span className="font-mono rounded bg-[var(--surface-muted)] border border-[var(--border)] px-1.5 py-0.5 text-[11px] font-semibold text-[var(--text)]">
+                                      {p.enrollmentNo || "—"}
+                                    </span>
+                                  </td>
+                                  <td className="px-3.5 py-3 text-[var(--text-secondary)]">
+                                    {p.branch || "—"} {p.batch ? `· ${p.batch}` : ""}
+                                  </td>
+                                  <td className="px-3.5 py-3 font-mono text-[11px] text-[var(--text)]">
+                                    {p.hackerRankHandle ? `@${p.hackerRankHandle}` : "—"}
+                                  </td>
+                                  {registrationsData.isTeamContest && (
+                                    <td className="px-3.5 py-3">
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="font-medium text-[var(--text)]">{p.teamName || "—"}</span>
+                                        {p.role && (
+                                          <span
+                                            className={`rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${
+                                              p.role === "LEADER"
+                                                ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                                                : "bg-[var(--surface-muted)] text-[var(--muted)]"
+                                            }`}
+                                          >
+                                            {p.role}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </td>
+                                  )}
+                                  <td className="px-3.5 py-3 font-mono text-[11px] text-[var(--muted)]">
+                                    {p.email || "—"}
+                                  </td>
+                                  <td className="px-3.5 py-3 text-right text-[11px] text-[var(--muted)] whitespace-nowrap">
+                                    {regDate}
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+
+                {/* Modal Footer */}
+                <div className="flex items-center justify-between border-t border-[var(--border)] bg-[var(--surface-muted)] px-5 py-3 text-xs text-[var(--text-secondary)]">
+                  <div>
+                    Showing <b>{filteredParticipants.length}</b> of <b>{registrationsData?.totalIndividualCount || 0}</b> candidate(s)
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleCloseRegistrationsModal}
+                    className="rounded-lg border border-[var(--border)] bg-[var(--surface)] px-4 py-1.5 text-xs font-semibold text-[var(--text)] hover:bg-[var(--surface-hover)] shadow-sm transition"
+                  >
+                    Close
+                  </button>
+                </div>
+
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -2153,20 +2780,16 @@ export default function AdminPage() {
                   </div>
                 </div>
 
-                <div className="max-h-[500px] overflow-x-auto overflow-y-auto">
-                  <table className="w-full text-left text-xs min-w-[750px]">
+                <div className="max-h-[500px] overflow-y-auto">
+                  <table className="w-full text-left text-xs">
                     <thead className="sticky top-0 bg-[var(--surface-muted)] text-[var(--text-secondary)]">
                       <tr>
-                        <th className="px-3 py-2 font-semibold text-center w-12">Rank</th>
+                        <th className="px-2.5 py-2 font-semibold text-center w-12">Rank</th>
                         <th className="px-3 py-2 font-semibold">Candidate Name</th>
-                        <th className="px-3 py-2 font-semibold">Enrollment</th>
-                        <th className="px-3 py-2 font-semibold">Batch / Branch</th>
-                        <th className="px-3 py-2 text-center font-semibold">Score</th>
-                        <th className="px-3 py-2 text-center font-semibold">Solved</th>
-                        <th className="px-3 py-2 text-center font-semibold">Penalty</th>
-                        <th className="px-3 py-2 font-semibold">Email</th>
-                        <th className="px-3 py-2 text-center font-semibold">Status</th>
-                        <th className="px-3 py-2 text-right font-semibold">Actions</th>
+                        <th className="px-2.5 py-2 font-semibold">Enrollment</th>
+                        <th className="px-2.5 py-2 font-semibold">Batch / Branch</th>
+                        <th className="px-2.5 py-2 text-center font-semibold w-20">Status</th>
+                        <th className="px-2.5 py-2 text-right font-semibold w-20">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[var(--border)]">
@@ -2204,25 +2827,13 @@ export default function AdminPage() {
                                     <span className="text-[10px] text-[var(--muted)] font-mono">@{pMatch.hackerRankHandle}</span>
                                   )}
                                 </td>
-                                <td className="px-3 py-2.5 font-mono text-[11px] text-[var(--muted)]">
+                                <td className="px-2.5 py-2.5 font-mono text-[11px] text-[var(--muted)]">
                                   {cert.enrollmentNo || "—"}
                                 </td>
-                                <td className="px-3 py-2.5 text-[11px] text-[var(--muted)]">
+                                <td className="px-2.5 py-2.5 text-[11px] text-[var(--muted)]">
                                   {pMatch?.branch || pMatch?.batch ? `${pMatch?.batch || ""} ${pMatch?.branch ? `· ${pMatch.branch}` : ""}` : "—"}
                                 </td>
-                                <td className="px-3 py-2.5 text-center font-bold text-[#8dc63f]">
-                                  {cert.score ?? pMatch?.score ?? "—"}
-                                </td>
-                                <td className="px-3 py-2.5 text-center font-semibold text-emerald-500">
-                                  {pMatch?.solved ?? "—"}
-                                </td>
-                                <td className="px-3 py-2.5 text-center font-mono text-[11px] text-[var(--muted)]">
-                                  {pMatch?.penalty !== undefined ? `${pMatch.penalty}m` : "—"}
-                                </td>
-                                <td className="px-3 py-2.5 font-mono text-[11px] text-[var(--muted)]">
-                                  {cert.email || <span className="italic">Not specified</span>}
-                                </td>
-                                <td className="px-3 py-2.5 text-center">
+                                <td className="px-2.5 py-2.5 text-center">
                                   <div className="inline-flex items-center justify-center gap-1.5">
                                     {/* Certificate Generated Tick */}
                                     <span
@@ -2334,25 +2945,13 @@ export default function AdminPage() {
                                   <span className="text-[10px] text-[var(--muted)] font-mono">@{p.hackerRankHandle}</span>
                                 )}
                               </td>
-                              <td className="px-3 py-2.5 font-mono text-[11px] text-[var(--muted)]">
+                              <td className="px-2.5 py-2.5 font-mono text-[11px] text-[var(--muted)]">
                                 {p.enrollmentNo || "—"}
                               </td>
-                              <td className="px-3 py-2.5 text-[11px] text-[var(--muted)]">
+                              <td className="px-2.5 py-2.5 text-[11px] text-[var(--muted)]">
                                 {p.branch || p.batch ? `${p.batch || ""} ${p.branch ? `· ${p.branch}` : ""}` : "—"}
                               </td>
-                              <td className="px-3 py-2.5 text-center font-bold text-[#8dc63f]">
-                                {p.score ?? 0}
-                              </td>
-                              <td className="px-3 py-2.5 text-center font-semibold text-emerald-500">
-                                {p.solved ?? "—"}
-                              </td>
-                              <td className="px-3 py-2.5 text-center font-mono text-[11px] text-[var(--muted)]">
-                                {p.penalty !== undefined ? `${p.penalty}m` : "—"}
-                              </td>
-                              <td className="px-3 py-2.5 font-mono text-[11px] text-[var(--muted)]">
-                                {p.email || <span className="italic">Not specified</span>}
-                              </td>
-                              <td className="px-3 py-2.5 text-center">
+                              <td className="px-2.5 py-2.5 text-center">
                                 <span
                                   className="inline-flex size-6 items-center justify-center rounded-full bg-[var(--surface-muted)] text-[var(--muted)]"
                                   title="Pending Generation"
@@ -2360,7 +2959,7 @@ export default function AdminPage() {
                                   <Clock size={13} />
                                 </span>
                               </td>
-                              <td className="px-3 py-2.5 text-right">
+                              <td className="px-2.5 py-2.5 text-right">
                                 <button
                                   type="button"
                                   onClick={() => setParticipantToDelete({ index: idx, name: p.name })}
@@ -2375,13 +2974,13 @@ export default function AdminPage() {
                           ))
                       ) : !selectedContestSlug ? (
                         <tr>
-                          <td colSpan={10} className="px-4 py-12 text-center text-amber-500 font-medium">
+                          <td colSpan={6} className="px-4 py-12 text-center text-amber-500 font-medium">
                             Please select a contest from dropdown .
                           </td>
                         </tr>
                       ) : (
                         <tr>
-                          <td colSpan={10} className="px-4 py-12 text-center text-[var(--muted)]">
+                          <td colSpan={6} className="px-4 py-12 text-center text-[var(--muted)]">
                             No leaderboard records uploaded for {contests.find((c) => c.slug === selectedContestSlug)?.title || selectedContestSlug}. Upload a JSON file or click &quot;Sample Data&quot; to begin.
                           </td>
                         </tr>
