@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { DashboardShell } from "@/components/layout/dashboard-shell";
 import {
   Award,
   ChevronLeft,
@@ -710,26 +711,20 @@ export default function TeamPage() {
     );
 
   return (
-    <div className="team-page-wrapper">
-      {/* Ambient background glow identical to Login and Contact pages */}
-      <div className="team-bg-glow" aria-hidden="true" />
+    <DashboardShell>
+      <div className="team-page-wrapper">
+        {/* Ambient background glow identical to Login and Contact pages */}
+        <div className="team-bg-glow" aria-hidden="true" />
 
-      {/* Navigation Return */}
-      <div style={{ maxWidth: "1200px", margin: "24px auto 0", padding: "0 24px", position: "relative", zIndex: 10 }}>
-        <Link href="/dashboard" className="back-link">
-          ← Back to Dashboard
-        </Link>
-      </div>
+        {/* Cool & Aesthetic "Meet the Team" Hero Section */}
+        <header className="team-hero-header">
+          <h1 className="team-hero-title">
+            Meet the Team
+          </h1>
+        </header>
 
-      {/* Cool & Aesthetic "Meet the Team" Hero Section */}
-      <header className="team-hero-header">
-        <h1 className="team-hero-title">
-          Meet the Team
-        </h1>
-      </header>
-
-      {/* Main Container */}
-      <main className="team-container">
+        {/* Main Container */}
+        <div className="team-container">
         {/* TOP PROFILE SPOTLIGHT CARD (Generous Size & Customized Color Gradients) */}
         {currentMember ? (
           <article
@@ -979,7 +974,8 @@ export default function TeamPage() {
             </button>
           </div>
         )}
-      </main>
-    </div>
+        </div>
+      </div>
+    </DashboardShell>
   );
 }
