@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import {
   Award,
   ChevronLeft,
@@ -712,6 +713,13 @@ export default function TeamPage() {
     <div className="team-page-wrapper">
       {/* Ambient background glow identical to Login and Contact pages */}
       <div className="team-bg-glow" aria-hidden="true" />
+
+      {/* Navigation Return */}
+      <div style={{ maxWidth: "1200px", margin: "24px auto 0", padding: "0 24px", position: "relative", zIndex: 10 }}>
+        <Link href="/dashboard" className="back-link">
+          ← Back to Dashboard
+        </Link>
+      </div>
 
       {/* Cool & Aesthetic "Meet the Team" Hero Section */}
       <header className="team-hero-header">
