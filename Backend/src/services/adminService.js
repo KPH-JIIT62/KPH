@@ -284,6 +284,159 @@ function createAdminService(pool, { now = () => new Date() } = {}) {
     return { ok: true, deletedSlug: slug, title: contest.title };
   }
 
+  async function getContestRegistrations(slug) {
+    const { rows: contestRows } = await pool.query(
+      `SELECT id, slug, title, participation_type, venue, starts_at, ends_at
+         FROM contests
+        WHERE slug = $1`,
+      [slug]
+    );
+    if (!contestRows[0]) {
+      throw new HttpError(404, "CONTEST_NOT_FOUND", "Contest not found.");
+    }
+    const contest = contestRows[0];
+    const isTeamContest = contest.participation_type === "TEAM" || slug === "execute-26-4";
+
+    // 1. Fetch solo registrations
+    const { rows: soloRows } = await pool.query(
+      `SELECT r.id AS registration_id,
+              r.created_at AS registered_at,
+              r.hackerrank_handle AS registered_handle,
+              u.id AS user_id,
+              u.display_name,
+              u.email,
+              u.enrollment_no,
+              u.branch,
+              u.batch,
+              u.hackerrank_handle AS profile_hackerrank_handle,
+              u.codeforces_handle,
+              u.leetcode_handle,
+              u.codechef_handle
+         FROM contest_registrations r
+         JOIN users u ON u.id = r.user_id
+        WHERE r.contest_id = $1
+        ORDER BY r.created_at ASC`,
+      [contest.id]
+    );
+
+    // 2. Fetch team registrations (active teams)
+    const { rows: teamMemberRows } = await pool.query(
+      `SELECT t.id AS team_id,
+              t.team_name,
+              t.hackerrank_handle AS team_hackerrank_handle,
+              t.status AS team_status,
+              t.created_at AS team_registered_at,
+              t.leader_user_id,
+              tm.role AS member_role,
+              tm.active AS member_active,
+              tm.created_at AS member_joined_at,
+              u.id AS user_id,
+              u.display_name,
+              u.email,
+              u.enrollment_no,
+              u.branch,
+              u.batch,
+              u.hackerrank_handle AS profile_hackerrank_handle,
+              u.codeforces_handle,
+              u.leetcode_handle,
+              u.codechef_handle
+         FROM contest_teams t
+         JOIN contest_team_members tm ON tm.team_id = t.id AND tm.active = true
+         JOIN users u ON u.id = tm.user_id
+        WHERE t.contest_id = $1 AND t.status = 'ACTIVE'
+        ORDER BY t.created_at ASC, tm.role DESC, tm.created_at ASC`,
+      [contest.id]
+    );
+
+    const teamsMap = new Map();
+    for (const row of teamMemberRows) {
+      if (!teamsMap.has(row.team_id)) {
+        teamsMap.set(row.team_id, {
+          teamId: row.team_id,
+          teamName: row.team_name,
+          teamHackerRankHandle: row.team_hackerrank_handle || "",
+          registeredAt: row.team_registered_at,
+          leaderUserId: row.leader_user_id,
+          members: [],
+        });
+      }
+      const team = teamsMap.get(row.team_id);
+      team.members.push({
+        userId: row.user_id,
+        role: row.member_role,
+        displayName: row.display_name,
+        email: row.email,
+        enrollmentNo: row.enrollment_no || "",
+        branch: row.branch || "",
+        batch: row.batch || "",
+        hackerRankHandle: row.profile_hackerrank_handle || row.team_hackerrank_handle || "",
+        codeforcesHandle: row.codeforces_handle || "",
+        leetcodeHandle: row.leetcode_handle || "",
+        codechefHandle: row.codechef_handle || "",
+        joinedAt: row.member_joined_at,
+      });
+    }
+
+    const teams = Array.from(teamsMap.values());
+
+    const soloParticipants = soloRows.map((r) => ({
+      registrationId: r.registration_id,
+      userId: r.user_id,
+      displayName: r.display_name,
+      email: r.email,
+      enrollmentNo: r.enrollment_no || "",
+      branch: r.branch || "",
+      batch: r.batch || "",
+      hackerRankHandle: r.registered_handle || r.profile_hackerrank_handle || "",
+      codeforcesHandle: r.codeforces_handle || "",
+      leetcodeHandle: r.leetcode_handle || "",
+      codechefHandle: r.codechef_handle || "",
+      teamName: null,
+      role: "SOLO",
+      registeredAt: r.registered_at,
+    }));
+
+    const flatParticipants = [...soloParticipants];
+    for (const team of teams) {
+      for (const m of team.members) {
+        flatParticipants.push({
+          registrationId: `${team.teamId}-${m.userId}`,
+          userId: m.userId,
+          displayName: m.displayName,
+          email: m.email,
+          enrollmentNo: m.enrollmentNo,
+          branch: m.branch,
+          batch: m.batch,
+          hackerRankHandle: m.hackerRankHandle || team.teamHackerRankHandle,
+          codeforcesHandle: m.codeforcesHandle,
+          leetcodeHandle: m.leetcodeHandle,
+          codechefHandle: m.codechefHandle,
+          teamName: team.teamName,
+          role: m.role,
+          registeredAt: team.registeredAt,
+        });
+      }
+    }
+
+    return {
+      contest: {
+        id: contest.id,
+        slug: contest.slug,
+        title: contest.title,
+        participationType: contest.participation_type || "SOLO",
+        venue: contest.venue,
+        startsAt: contest.starts_at,
+        endsAt: contest.ends_at,
+      },
+      isTeamContest,
+      totalCount: isTeamContest ? teams.length : soloParticipants.length,
+      totalIndividualCount: flatParticipants.length,
+      teams,
+      soloParticipants,
+      participants: flatParticipants,
+    };
+  }
+
   // -------------------------------------------------------------
   // LEADERBOARD & CERTIFICATE GENERATION
   // -------------------------------------------------------------
@@ -787,6 +940,7 @@ function createAdminService(pool, { now = () => new Date() } = {}) {
     createContest,
     updateContest,
     deleteContest,
+    getContestRegistrations,
     previewLeaderboard,
     publishLeaderboard,
     getLeaderboard,
