@@ -3,7 +3,6 @@ import { BrandLogo } from "@/components/brand-logo";
 
 const navLinks = [
   { label: "About", href: "/about" },
-  { label: "Meet the Team", href: "/team" },
 ];
 
 const socials = [
