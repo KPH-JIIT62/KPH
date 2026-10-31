@@ -76,7 +76,7 @@ function createContestService(pool, userService, { now = () => new Date() } = {}
         registration = { ...toTeamRegistration(team), role: team.role, members: await teamMembers(team.id) };
         if (slug === EXECUTE) {
           const leader = (await pool.query("SELECT enrollment_no FROM users WHERE id=$1", [team.leader_user_id])).rows[0];
-          registration.seatingPlan = getSeatingPlan(leader?.enrollment_no, team.team_name);
+          registration.seatingPlan = getSeatingPlan(leader?.enrollment_no, team.team_name, undefined, team.created_at);
         }
       }
     } else {
