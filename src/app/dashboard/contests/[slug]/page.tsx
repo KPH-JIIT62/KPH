@@ -19,7 +19,7 @@ import type { ContestDetail, ContestRegistration } from "@/types/contest";
 import AITextLoading from "@/components/ui/ai-text-loading";
 
 type State = { status: "loading" | "ready" | "notfound" | "error"; detail: ContestDetail | null; error: string };
-const EXECUTE_SEATING_PLACEHOLDER = "Seating plan will be updated at 1200 hours on 31st October 2026";
+const EXECUTE_SEATING_PLACEHOLDER = "All registrations till 12:00 pm today have been made live. Registrations made after 12:00 pm today will be made live at 2:00 pm today.";
 
 export default function ContestPage() {
   const { slug } = useParams<{ slug: string }>();

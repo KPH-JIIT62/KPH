@@ -2,7 +2,20 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const DEFAULT_PATH = path.resolve(__dirname, "../../data/execute-seating-plan.csv");
-const PLACEHOLDER = "Seating plan will be updated at 1200 hours on 31st October 2026";
+const PLACEHOLDER = "All registrations till 12:00 pm today have been made live. Registrations made after 12:00 pm today will be made live at 2:00 pm today.";
+
+function registeredAfterNoonIndia(createdAt) {
+  if (!createdAt) return false;
+  const date = new Date(createdAt);
+  if (Number.isNaN(date.getTime())) return false;
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
+  return values.year === "2026" && values.month === "10" && values.day === "31"
+    && (Number(values.hour) > 12 || (Number(values.hour) === 12 && Number(values.minute) >= 0));
+}
 
 function parseCsv(text) {
   const rows = [];
@@ -31,8 +44,9 @@ function parseCsv(text) {
 
 const normalizeHeader = (value) => String(value || "").replace(/^\uFEFF/, "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
 
-function getSeatingPlan(leaderEnrollmentNo, teamName, csvPath = DEFAULT_PATH) {
+function getSeatingPlan(leaderEnrollmentNo, teamName, csvPath = DEFAULT_PATH, createdAt = null) {
   const fallback = { teamName, hallName: null, labNumber: null, systemNumber: null, message: PLACEHOLDER };
+  if (registeredAfterNoonIndia(createdAt)) return fallback;
   try {
     const rows = parseCsv(fs.readFileSync(csvPath, "utf8"));
     if (rows.length < 2) return fallback;
@@ -44,7 +58,9 @@ function getSeatingPlan(leaderEnrollmentNo, teamName, csvPath = DEFAULT_PATH) {
     const labIndex = column("lab_number", "lab_no", "lab");
     const systemIndex = column("system_number", "system_no", "system");
     if ([leaderIndex, teamIndex, hallIndex, labIndex, systemIndex].some((index) => index < 0)) return fallback;
-    const matchingRow = rows.slice(1).find((cells) => String(cells[leaderIndex] || "").trim() === String(leaderEnrollmentNo || "").trim());
+    const matchingRow = rows.slice(1).find((cells) =>
+      String(cells[leaderIndex] || "").trim() === String(leaderEnrollmentNo || "").trim()
+      && String(cells[teamIndex] || "").trim().toLocaleLowerCase() === String(teamName || "").trim().toLocaleLowerCase());
     if (!matchingRow) return fallback;
     const field = (index) => String(matchingRow[index] || "").trim() || null;
     const hallName = field(hallIndex);
@@ -57,4 +73,4 @@ function getSeatingPlan(leaderEnrollmentNo, teamName, csvPath = DEFAULT_PATH) {
   }
 }
 
-module.exports = { DEFAULT_PATH, PLACEHOLDER, parseCsv, getSeatingPlan };
+module.exports = { DEFAULT_PATH, PLACEHOLDER, parseCsv, getSeatingPlan, registeredAfterNoonIndia };
