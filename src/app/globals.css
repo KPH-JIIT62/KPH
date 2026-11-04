@@ -266,26 +266,6 @@ input {
   color: var(--text-secondary);
 }
 
-@media (max-width: 900px) {
-  .topbar-inner {
-    flex-wrap: wrap;
-    padding-top: 12px;
-    padding-bottom: 12px;
-  }
-
-  .topbar-nav {
-    order: 3;
-    width: 100%;
-    overflow-x: auto;
-    flex-wrap: nowrap;
-    padding-bottom: 2px;
-  }
-
-  .topbar-actions {
-    margin-left: 0;
-  }
-}
-
 @media (max-width: 540px) {
   .login-card {
     padding: 32px 24px;
@@ -296,20 +276,15 @@ input {
   }
 
   .topbar-inner {
-    padding-inline: 18px;
+    padding-inline: 14px;
   }
 
   .brand-logo-nav {
-    --brand-logo-image-height: 36px;
+    --brand-logo-image-height: 32px;
   }
 
   .header-profile>span:not(.member-avatar) {
     max-width: 90px;
-  }
-
-  .topbar-actions {
-    width: 100%;
-    justify-content: space-between;
   }
 }
 
@@ -414,24 +389,29 @@ html[data-theme="dark"] .brand-logo-dark {
 .topbar {
   position: sticky;
   top: 0;
-  z-index: 30;
-  background: color-mix(in srgb, var(--surface) 90%, transparent);
+  z-index: 40;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
   backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
   border-bottom: 1px solid var(--border);
+  transition: all 200ms ease;
 }
 
 .topbar-inner {
   width: min(100%, calc(var(--page-max) - 2 * var(--page-pad-x)));
-  min-height: 88px;
+  min-height: 70px;
   margin: 0 auto;
-  padding: 16px var(--page-pad-x);
+  padding: 12px var(--page-pad-x);
   display: flex;
   align-items: center;
-  gap: 16px;
+  justify-content: space-between;
+  gap: 14px;
 }
 
 .topbar-brand {
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
 }
 
 .topbar-nav {
@@ -440,14 +420,115 @@ html[data-theme="dark"] .brand-logo-dark {
   gap: 6px;
   flex: 1;
   min-width: 0;
-  flex-wrap: wrap;
+  margin-left: 8px;
 }
 
 .topbar-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   margin-left: auto;
+  flex-shrink: 0;
+}
+
+/* Mobile Hamburger Toggle Button (Hidden on Desktop) */
+.mobile-menu-btn {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--surface-muted);
+  color: var(--text);
+  cursor: pointer;
+  transition: all 180ms ease;
+  flex-shrink: 0;
+}
+
+.mobile-menu-btn:hover {
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
+}
+
+/* Mobile Navigation Drawer (Drop-down panel on Phone Mode) */
+.mobile-nav-drawer {
+  display: none;
+  width: 100%;
+  border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 98%, transparent);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: 0 16px 36px -8px var(--shadow-elevated);
+  padding: 10px 16px 16px;
+  animation: mobileDrawerSlide 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes mobileDrawerSlide {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.mobile-nav-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mobile-nav-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  text-decoration: none;
+  transition: all 150ms ease;
+}
+
+.mobile-nav-link:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.mobile-nav-link-active {
+  background: rgba(74, 222, 128, 0.12);
+  color: #15803d !important;
+  font-weight: 600;
+}
+
+html[data-theme="dark"] .mobile-nav-link-active {
+  color: #4ade80 !important;
+  background: rgba(74, 222, 128, 0.14);
+}
+
+/* Responsive Switch between Phone and Desktop Mode */
+@media (max-width: 860px) {
+  .topbar-nav {
+    display: none !important;
+  }
+
+  .mobile-menu-btn {
+    display: inline-flex !important;
+  }
+
+  .mobile-nav-drawer {
+    display: block !important;
+  }
+
+  .topbar-inner {
+    min-height: 58px;
+    padding: 8px var(--page-pad-x);
+  }
 }
 
 .nav-link {
