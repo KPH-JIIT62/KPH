@@ -140,3 +140,24 @@ export type ContestRegistrationsResponse = {
   participants: RegisteredCandidate[];
 };
 
+export type TeamMemberRecord = {
+  id: string;
+  name: string;
+  role: string;
+  category: "faculty" | "advisors" | "coordinators" | "volunteers";
+  academicYear: string;
+  image?: string;
+  objectPosition?: string;
+  quote?: string;
+  specialty?: string;
+  linkedin?: string;
+  github?: string;
+  instagram?: string;
+  portfolio?: string;
+  displayOrder: number;
+  isActive: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+

@@ -935,6 +935,297 @@ function createAdminService(pool, { now = () => new Date() } = {}) {
     return { ok: true, removedId: id, identifier: item.identifier };
   }
 
+  // -------------------------------------------------------------
+  // TEAM SHOWCASE MANAGEMENT (Meet the Team)
+  // -------------------------------------------------------------
+  let teamSchemaEnsured = false;
+  async function ensureTeamShowcaseSchema() {
+    if (teamSchemaEnsured) return;
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS team_showcase_members (
+          id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          name            TEXT NOT NULL,
+          role            TEXT NOT NULL,
+          category        TEXT NOT NULL CHECK (category IN ('faculty', 'advisors', 'coordinators', 'volunteers')),
+          academic_year   TEXT NOT NULL DEFAULT '2025-26',
+          image           TEXT,
+          object_position TEXT DEFAULT 'center 20%',
+          quote           TEXT,
+          specialty       TEXT,
+          linkedin        TEXT,
+          github          TEXT,
+          instagram       TEXT,
+          portfolio       TEXT,
+          display_order   INT NOT NULL DEFAULT 0,
+          is_active       BOOLEAN NOT NULL DEFAULT true,
+          created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+          updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        CREATE INDEX IF NOT EXISTS team_showcase_year_cat_idx
+          ON team_showcase_members (academic_year, category, display_order);
+      `);
+
+      const { rows } = await pool.query("SELECT COUNT(*) AS count FROM team_showcase_members");
+      if (parseInt(rows[0]?.count || "0", 10) === 0) {
+        const seedPath = path.join(__dirname, "..", "..", "db", "migrations", "025_team_showcase_members.sql");
+        if (fs.existsSync(seedPath)) {
+          const sql = fs.readFileSync(seedPath, "utf8");
+          await pool.query(sql);
+        }
+      }
+      teamSchemaEnsured = true;
+    } catch {
+      // ignore if already applied or handled
+    }
+  }
+
+  function toTeamMember(row) {
+    return {
+      id: row.id,
+      name: row.name,
+      role: row.role,
+      category: row.category,
+      academicYear: row.academic_year,
+      image: row.image || "",
+      objectPosition: row.object_position || "center 20%",
+      quote: row.quote || "",
+      specialty: row.specialty || "",
+      linkedin: row.linkedin || "",
+      github: row.github || "",
+      instagram: row.instagram || "",
+      portfolio: row.portfolio || "",
+      displayOrder: Number(row.display_order) || 0,
+      isActive: Boolean(row.is_active),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  async function listTeamYears() {
+    await ensureTeamShowcaseSchema();
+    const { rows } = await pool.query(
+      `SELECT DISTINCT academic_year FROM team_showcase_members ORDER BY academic_year DESC`
+    );
+    const dbYears = rows.map((r) => r.academic_year);
+
+    // Also discover any physical year directories created in public/images/team/
+    const teamImgDir = path.resolve(__dirname, "../../../public/images/team");
+    let dirYears = [];
+    if (fs.existsSync(teamImgDir)) {
+      try {
+        dirYears = fs
+          .readdirSync(teamImgDir, { withFileTypes: true })
+          .filter((d) => d.isDirectory() && /^\d{4}-\d{2,4}$/.test(d.name))
+          .map((d) => d.name);
+      } catch {
+        // ignore
+      }
+    }
+
+    const allYears = Array.from(new Set([...dbYears, ...dirYears]));
+    if (!allYears.includes("2025-26")) allYears.unshift("2025-26");
+    allYears.sort((a, b) => b.localeCompare(a));
+    return { years: allYears };
+  }
+
+  async function listTeamMembers({ academicYear, category } = {}) {
+    await ensureTeamShowcaseSchema();
+    const params = [];
+    const conditions = [];
+
+    if (academicYear) {
+      params.push(academicYear);
+      conditions.push(`academic_year = $${params.length}`);
+    }
+    if (category && category !== "all") {
+      params.push(category);
+      conditions.push(`category = $${params.length}`);
+    }
+
+    const whereClause = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+    const { rows } = await pool.query(
+      `SELECT * FROM team_showcase_members
+       ${whereClause}
+       ORDER BY display_order ASC, created_at ASC`,
+      params
+    );
+
+    return {
+      members: rows.map(toTeamMember),
+    };
+  }
+
+  async function getTeamShowcase({ academicYear } = {}) {
+    await ensureTeamShowcaseSchema();
+    const { years } = await listTeamYears();
+    const currentYear = academicYear || years[0] || "2025-26";
+    const availableYears = [...years];
+    if (academicYear && !availableYears.includes(academicYear)) {
+      availableYears.unshift(academicYear);
+    }
+
+    const { rows } = await pool.query(
+      `SELECT * FROM team_showcase_members
+       WHERE academic_year = $1 AND is_active = true
+       ORDER BY display_order ASC, created_at ASC`,
+      [currentYear]
+    );
+
+    return {
+      academicYear: currentYear,
+      years: availableYears,
+      members: rows.map(toTeamMember),
+    };
+  }
+
+  async function createTeamMember(data = {}) {
+    await ensureTeamShowcaseSchema();
+    const name = typeof data.name === "string" ? data.name.trim() : "";
+    const role = typeof data.role === "string" ? data.role.trim() : "";
+    const category = typeof data.category === "string" ? data.category.trim().toLowerCase() : "coordinators";
+    const academicYear = typeof data.academicYear === "string" && data.academicYear.trim() ? data.academicYear.trim() : "2025-26";
+
+    if (!name) throw new HttpError(400, "VALIDATION_ERROR", "Member name is required.");
+    if (!role) throw new HttpError(400, "VALIDATION_ERROR", "Member role is required.");
+    if (!["faculty", "advisors", "coordinators", "volunteers"].includes(category)) {
+      throw new HttpError(400, "VALIDATION_ERROR", "Invalid category. Must be faculty, advisors, coordinators, or volunteers.");
+    }
+
+    const { rows } = await pool.query(
+      `INSERT INTO team_showcase_members (
+        name, role, category, academic_year, image, object_position, quote, specialty, linkedin, github, instagram, portfolio, display_order, is_active
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+      RETURNING *`,
+      [
+        name,
+        role,
+        category,
+        academicYear,
+        data.image?.trim() || null,
+        data.objectPosition?.trim() || "center 20%",
+        data.quote?.trim() || null,
+        data.specialty?.trim() || null,
+        data.linkedin?.trim() || null,
+        data.github?.trim() || null,
+        data.instagram?.trim() || null,
+        data.portfolio?.trim() || null,
+        Number(data.displayOrder) || 0,
+        data.isActive !== undefined ? Boolean(data.isActive) : true,
+      ]
+    );
+
+    return { ok: true, member: toTeamMember(rows[0]) };
+  }
+
+  async function updateTeamMember(id, data = {}) {
+    await ensureTeamShowcaseSchema();
+    const { rows: existing } = await pool.query("SELECT * FROM team_showcase_members WHERE id = $1", [id]);
+    if (!existing[0]) throw new HttpError(404, "NOT_FOUND", "Team member not found.");
+
+    const current = existing[0];
+    const name = data.name !== undefined ? String(data.name).trim() : current.name;
+    const role = data.role !== undefined ? String(data.role).trim() : current.role;
+    const category = data.category !== undefined ? String(data.category).trim().toLowerCase() : current.category;
+    const academicYear = data.academicYear !== undefined ? String(data.academicYear).trim() : current.academic_year;
+    const image = data.image !== undefined ? (data.image ? String(data.image).trim() : null) : current.image;
+    const objectPosition = data.objectPosition !== undefined ? String(data.objectPosition).trim() : current.object_position;
+    const quote = data.quote !== undefined ? (data.quote ? String(data.quote).trim() : null) : current.quote;
+    const specialty = data.specialty !== undefined ? (data.specialty ? String(data.specialty).trim() : null) : current.specialty;
+    const linkedin = data.linkedin !== undefined ? (data.linkedin ? String(data.linkedin).trim() : null) : current.linkedin;
+    const github = data.github !== undefined ? (data.github ? String(data.github).trim() : null) : current.github;
+    const instagram = data.instagram !== undefined ? (data.instagram ? String(data.instagram).trim() : null) : current.instagram;
+    const portfolio = data.portfolio !== undefined ? (data.portfolio ? String(data.portfolio).trim() : null) : current.portfolio;
+    const displayOrder = data.displayOrder !== undefined ? Number(data.displayOrder) : current.display_order;
+    const isActive = data.isActive !== undefined ? Boolean(data.isActive) : current.is_active;
+
+    const { rows } = await pool.query(
+      `UPDATE team_showcase_members
+          SET name = $1, role = $2, category = $3, academic_year = $4, image = $5, object_position = $6,
+              quote = $7, specialty = $8, linkedin = $9, github = $10, instagram = $11, portfolio = $12,
+              display_order = $13, is_active = $14, updated_at = now()
+        WHERE id = $15
+        RETURNING *`,
+      [
+        name,
+        role,
+        category,
+        academicYear,
+        image,
+        objectPosition,
+        quote,
+        specialty,
+        linkedin,
+        github,
+        instagram,
+        portfolio,
+        displayOrder,
+        isActive,
+        id,
+      ]
+    );
+
+    return { ok: true, member: toTeamMember(rows[0]) };
+  }
+
+  async function deleteTeamMember(id) {
+    await ensureTeamShowcaseSchema();
+    const { rows } = await pool.query("DELETE FROM team_showcase_members WHERE id = $1 RETURNING id, name", [id]);
+    if (!rows[0]) throw new HttpError(404, "NOT_FOUND", "Team member not found.");
+    return { ok: true, deletedId: id, name: rows[0].name };
+  }
+
+  async function createTeamYear(year) {
+    const cleanYear = String(year || "").trim().replace(/[^a-zA-Z0-9._-]/g, "");
+    if (!cleanYear) throw new HttpError(400, "VALIDATION_ERROR", "Academic year is required.");
+    const targetDir = path.resolve(__dirname, `../../../public/images/team/${cleanYear}`);
+    if (!fs.existsSync(targetDir)) {
+      fs.mkdirSync(targetDir, { recursive: true });
+    }
+    return { ok: true, academicYear: cleanYear };
+  }
+
+  async function uploadTeamImage({ academicYear = "2025-26", filename, base64, memberName } = {}) {
+    if (!base64 || typeof base64 !== "string") {
+      throw new HttpError(400, "VALIDATION_ERROR", "Image data is required.");
+    }
+
+    const match = base64.match(/^data:image\/([a-zA-Z0-9+]+);base64,(.+)$/);
+    let ext = "png";
+    let rawBase64 = base64;
+    if (match) {
+      ext = match[1] === "jpeg" ? "jpg" : match[1].toLowerCase();
+      rawBase64 = match[2];
+    } else if (filename && filename.includes(".")) {
+      ext = filename.split(".").pop().toLowerCase();
+    }
+
+    if (!["png", "jpg", "jpeg", "webp"].includes(ext)) {
+      ext = "png";
+    }
+
+    const cleanYear = String(academicYear || "2025-26").trim().replace(/[^a-zA-Z0-9._-]/g, "") || "2025-26";
+    const rawName = memberName || filename || "member";
+    const slug = slugify(rawName.replace(/\.[^/.]+$/, "")) || "member";
+    const finalFilename = `${slug}-${Date.now()}.${ext}`;
+
+    const targetDir = path.resolve(__dirname, `../../../public/images/team/${cleanYear}`);
+    if (!fs.existsSync(targetDir)) {
+      fs.mkdirSync(targetDir, { recursive: true });
+    }
+
+    const targetFilePath = path.join(targetDir, finalFilename);
+    const buffer = Buffer.from(rawBase64, "base64");
+    fs.writeFileSync(targetFilePath, buffer);
+
+    return {
+      ok: true,
+      imagePath: `/images/team/${cleanYear}/${finalFilename}`,
+      filename: finalFilename,
+      academicYear: cleanYear,
+    };
+  }
+
   return {
     listContests,
     createContest,
@@ -951,6 +1242,14 @@ function createAdminService(pool, { now = () => new Date() } = {}) {
     listAdminAccess,
     addAdminAccess,
     removeAdminAccess,
+    listTeamYears,
+    createTeamYear,
+    listTeamMembers,
+    getTeamShowcase,
+    createTeamMember,
+    updateTeamMember,
+    deleteTeamMember,
+    uploadTeamImage,
   };
 }
 
