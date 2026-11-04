@@ -105,6 +105,41 @@ function createAdminController(adminService) {
       const { id } = req.params;
       res.json(await adminService.removeAdminAccess(id, req.user?.email));
     },
+
+    // -------------------------------------------------------------
+    // TEAM SHOWCASE MANAGEMENT
+    // -------------------------------------------------------------
+    async listTeamMembers(req, res) {
+      const { year, category } = req.query;
+      res.json(await adminService.listTeamMembers({ academicYear: year, category }));
+    },
+
+    async listTeamYears(req, res) {
+      res.json(await adminService.listTeamYears());
+    },
+
+    async createTeamYear(req, res) {
+      const { year } = req.body || {};
+      res.status(201).json(await adminService.createTeamYear(year));
+    },
+
+    async createTeamMember(req, res) {
+      res.status(201).json(await adminService.createTeamMember(req.body || {}));
+    },
+
+    async updateTeamMember(req, res) {
+      const { id } = req.params;
+      res.json(await adminService.updateTeamMember(id, req.body || {}));
+    },
+
+    async deleteTeamMember(req, res) {
+      const { id } = req.params;
+      res.json(await adminService.deleteTeamMember(id));
+    },
+
+    async uploadTeamImage(req, res) {
+      res.status(201).json(await adminService.uploadTeamImage(req.body || {}));
+    },
   };
 }
 

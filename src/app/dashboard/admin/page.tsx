@@ -28,6 +28,8 @@ import {
   Save,
   FileText,
   Printer,
+  Sparkles,
+  Globe,
 } from "lucide-react";
 import { useAccount } from "@/components/account-provider";
 import { useAuth } from "@/components/auth-provider";
@@ -42,9 +44,10 @@ import type {
   ContestRegistrationsResponse,
   RegisteredCandidate,
   RegisteredTeam,
+  TeamMemberRecord,
 } from "@/types/admin";
 
-type ActiveTab = "contests" | "certificates" | "access";
+type ActiveTab = "contests" | "certificates" | "access" | "team";
 
 const SAMPLE_LEADERBOARD: LeaderboardParticipant[] = [
   { rank: 1, name: "Jayendra Pratap Singh", email: "2501030287@mail.jiit.ac.in", score: 800, solved: 4, penalty: 59, enrollmentNo: "2501030287", branch: "CSE", batch: "B12", hackerRankHandle: "h2501030287" },
@@ -347,6 +350,81 @@ export default function AdminPage() {
       return matchTeam || matchMember;
     });
   }, [registrationsData, registrationsSearch]);
+
+  // Team Showcase State
+  const [teamMembersList, setTeamMembersList] = useState<TeamMemberRecord[]>([]);
+  const [teamYears, setTeamYears] = useState<string[]>(["2025-26"]);
+  const [selectedTeamYear, setSelectedTeamYear] = useState<string>("2025-26");
+  const [selectedTeamCategory, setSelectedTeamCategory] = useState<string>("all");
+  const [teamSearch, setTeamSearch] = useState<string>("");
+  const [teamLoading, setTeamLoading] = useState<boolean>(false);
+  const [teamModalOpen, setTeamModalOpen] = useState<boolean>(false);
+  const [editingMember, setEditingMember] = useState<TeamMemberRecord | null>(null);
+  const [teamSubmitting, setTeamSubmitting] = useState<boolean>(false);
+  const [memberToDelete, setMemberToDelete] = useState<TeamMemberRecord | null>(null);
+  const [deleteMemberModalOpen, setDeleteMemberModalOpen] = useState<boolean>(false);
+  const [newYearModalOpen, setNewYearModalOpen] = useState<boolean>(false);
+  const [newYearInput, setNewYearInput] = useState<string>("");
+  const [imageUploading, setImageUploading] = useState<boolean>(false);
+
+  const [memberForm, setMemberForm] = useState({
+    name: "",
+    role: "",
+    category: "coordinators" as "faculty" | "advisors" | "coordinators" | "volunteers",
+    academicYear: "2025-26",
+    image: "",
+    objectPosition: "center 20%",
+    quote: "",
+    specialty: "",
+    linkedin: "",
+    github: "",
+    instagram: "",
+    portfolio: "",
+    displayOrder: 1,
+    isActive: true,
+  });
+
+  const fetchTeamData = useCallback(async () => {
+    try {
+      setTeamLoading(true);
+      const [membersRes, yearsRes] = await Promise.all([
+        api<{ members: TeamMemberRecord[] }>(`/api/admin/team?year=${encodeURIComponent(selectedTeamYear)}`),
+        api<{ years: string[] }>("/api/admin/team/years"),
+      ]);
+      setTeamMembersList(membersRes.members || []);
+      if (Array.isArray(yearsRes.years) && yearsRes.years.length > 0) {
+        setTeamYears((prev) => {
+          const merged = new Set([...yearsRes.years, ...prev, selectedTeamYear, "2025-26"]);
+          return Array.from(merged).filter(Boolean);
+        });
+      }
+    } catch {
+      // Safe fallback
+    } finally {
+      setTeamLoading(false);
+    }
+  }, [api, selectedTeamYear]);
+
+  useEffect(() => {
+    if (activeTab === "team" && account?.role === "ADMIN") {
+      void fetchTeamData();
+    }
+  }, [activeTab, fetchTeamData, account]);
+
+  const filteredTeamMembers = useMemo(() => {
+    return teamMembersList.filter((m) => {
+      const matchYear = !selectedTeamYear || m.academicYear === selectedTeamYear;
+      const matchCat = selectedTeamCategory === "all" || m.category === selectedTeamCategory;
+      const q = teamSearch.trim().toLowerCase();
+      const matchSearch =
+        !q ||
+        m.name.toLowerCase().includes(q) ||
+        m.role.toLowerCase().includes(q) ||
+        (m.specialty && m.specialty.toLowerCase().includes(q)) ||
+        (m.quote && m.quote.toLowerCase().includes(q));
+      return matchYear && matchCat && matchSearch;
+    });
+  }, [teamMembersList, selectedTeamYear, selectedTeamCategory, teamSearch]);
 
   // Auth Protection Gate
   if (status === "loading" || loading) return <AppLoader />;
@@ -1240,6 +1318,188 @@ export default function AdminPage() {
     }
   }
 
+  // Team Showcase Handlers
+  function handleOpenAddMemberModal() {
+    setEditingMember(null);
+    setMemberForm({
+      name: "",
+      role: "",
+      category: selectedTeamCategory !== "all" ? (selectedTeamCategory as "faculty" | "advisors" | "coordinators" | "volunteers") : "coordinators",
+      academicYear: selectedTeamYear || "2025-26",
+      image: "",
+      objectPosition: "center 20%",
+      quote: "",
+      specialty: "",
+      linkedin: "",
+      github: "",
+      instagram: "",
+      portfolio: "",
+      displayOrder: teamMembersList.length + 1,
+      isActive: true,
+    });
+    setTeamModalOpen(true);
+  }
+
+  function handleOpenEditMemberModal(m: TeamMemberRecord) {
+    setEditingMember(m);
+    setMemberForm({
+      name: m.name,
+      role: m.role,
+      category: m.category,
+      academicYear: m.academicYear || selectedTeamYear || "2025-26",
+      image: m.image || "",
+      objectPosition: m.objectPosition || "center 20%",
+      quote: m.quote || "",
+      specialty: m.specialty || "",
+      linkedin: m.linkedin || "",
+      github: m.github || "",
+      instagram: m.instagram || "",
+      portfolio: m.portfolio || "",
+      displayOrder: m.displayOrder ?? 0,
+      isActive: m.isActive !== false,
+    });
+    setTeamModalOpen(true);
+  }
+
+  async function handleSaveTeamMember(e: FormEvent) {
+    e.preventDefault();
+    if (!memberForm.name.trim()) {
+      setFeedback({ type: "error", message: "Member name is required." });
+      return;
+    }
+    if (!memberForm.role.trim()) {
+      setFeedback({ type: "error", message: "Member role is required." });
+      return;
+    }
+
+    try {
+      setTeamSubmitting(true);
+      if (editingMember) {
+        const res = await api<{ ok: boolean; member: TeamMemberRecord }>(`/api/admin/team/${editingMember.id}`, {
+          method: "PATCH",
+          body: memberForm,
+        });
+        setTeamMembersList((prev) =>
+          prev.map((item) => (item.id === editingMember.id ? res.member : item))
+        );
+        setFeedback({ type: "success", message: `Updated member "${res.member.name}" successfully.` });
+      } else {
+        const res = await api<{ ok: boolean; member: TeamMemberRecord }>("/api/admin/team", {
+          method: "POST",
+          body: memberForm,
+        });
+        setTeamMembersList((prev) => [...prev, res.member]);
+        if (!teamYears.includes(res.member.academicYear)) {
+          setTeamYears((prev) => [res.member.academicYear, ...prev]);
+        }
+        setFeedback({ type: "success", message: `Added "${res.member.name}" to ${res.member.academicYear} showcase.` });
+      }
+      setTeamModalOpen(false);
+      setEditingMember(null);
+    } catch (err: unknown) {
+      setFeedback({
+        type: "error",
+        message: err instanceof ApiError ? err.message : "Failed to save team member.",
+      });
+    } finally {
+      setTeamSubmitting(false);
+    }
+  }
+
+  async function handleConfirmDeleteTeamMember() {
+    if (!memberToDelete) return;
+    try {
+      setTeamSubmitting(true);
+      await api<{ ok: boolean; deletedId: string }>(`/api/admin/team/${memberToDelete.id}`, {
+        method: "DELETE",
+      });
+      setTeamMembersList((prev) => prev.filter((m) => m.id !== memberToDelete.id));
+      setFeedback({ type: "success", message: `Removed "${memberToDelete.name}" from showcase.` });
+      setDeleteMemberModalOpen(false);
+      setMemberToDelete(null);
+    } catch (err: unknown) {
+      setFeedback({
+        type: "error",
+        message: err instanceof ApiError ? err.message : "Failed to delete team member.",
+      });
+    } finally {
+      setTeamSubmitting(false);
+    }
+  }
+
+  async function handleImageFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      setFeedback({ type: "error", message: "Please select a valid image file (PNG, JPG, WEBP)." });
+      return;
+    }
+
+    if (file.size > 8 * 1024 * 1024) {
+      setFeedback({ type: "error", message: "Image size exceeds 8MB limit." });
+      return;
+    }
+
+    try {
+      setImageUploading(true);
+      const reader = new FileReader();
+      reader.onload = async () => {
+        try {
+          const base64 = reader.result as string;
+          const res = await api<{ ok: boolean; imagePath: string }>("/api/admin/team/upload", {
+            method: "POST",
+            body: {
+              filename: file.name,
+              base64,
+              memberName: memberForm.name || "member",
+              academicYear: memberForm.academicYear || selectedTeamYear || "2025-26",
+            },
+          });
+          setMemberForm((prev) => ({ ...prev, image: res.imagePath }));
+          setFeedback({ type: "success", message: `Uploaded image saved to ${res.imagePath}` });
+        } catch (err: unknown) {
+          setFeedback({
+            type: "error",
+            message: err instanceof ApiError ? err.message : "Failed to upload image.",
+          });
+        } finally {
+          setImageUploading(false);
+        }
+      };
+      reader.readAsDataURL(file);
+    } catch {
+      setImageUploading(false);
+      setFeedback({ type: "error", message: "Failed to read image file." });
+    }
+  }
+
+  async function handleAddAcademicYear(e: FormEvent) {
+    e.preventDefault();
+    const formatted = newYearInput.trim();
+    if (!formatted) return;
+
+    try {
+      await api<{ ok: boolean; academicYear: string }>("/api/admin/team/years", {
+        method: "POST",
+        body: { year: formatted },
+      });
+      setTeamYears((prev) => Array.from(new Set([formatted, ...prev])));
+      setSelectedTeamYear(formatted);
+      setNewYearInput("");
+      setNewYearModalOpen(false);
+      setFeedback({
+        type: "success",
+        message: `Created Academic Year folder ${formatted} and switched to it.`,
+      });
+    } catch (err: unknown) {
+      setFeedback({
+        type: "error",
+        message: err instanceof ApiError ? err.message : "Failed to create academic year.",
+      });
+    }
+  }
+
   return (
     <div className="section-page py-6">
       {/* Top Banner */}
@@ -1321,6 +1581,22 @@ export default function AdminPage() {
           Admin Access IDs
           <span className="rounded-full bg-[var(--surface-muted)] px-2 py-0.5 text-xs text-[var(--text-secondary)]">
             {admins.length}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab("team")}
+          className={`flex items-center gap-2 border-b-2 px-5 py-3 text-sm font-semibold transition-colors ${
+            activeTab === "team"
+              ? "border-[var(--accent)] text-[var(--text)]"
+              : "border-transparent text-[var(--text-secondary)] hover:text-[var(--text)]"
+          }`}
+        >
+          <Sparkles size={16} />
+          Meet the Team
+          <span className="rounded-full bg-[var(--surface-muted)] px-2 py-0.5 text-xs text-[var(--text-secondary)]">
+            {teamMembersList.length}
           </span>
         </button>
       </div>
@@ -2592,6 +2868,7 @@ export default function AdminPage() {
         </div>
       )}
 
+
       {/* ======================================================== */}
       {/* TAB 2: CERTIFICATES & LEADERBOARD */}
       {/* ======================================================== */}
@@ -3233,6 +3510,8 @@ export default function AdminPage() {
         </div>
       )}
 
+
+
       {/* ======================================================== */}
       {/* TAB 3: ADMIN ACCESS IDENTIFIERS */}
       {/* ======================================================== */}
@@ -3421,6 +3700,684 @@ export default function AdminPage() {
                     <span>{adminRevoking ? "Revoking..." : "Confirm Revoke"}</span>
                   </button>
                 </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* TAB 4: MEET THE TEAM SHOWCASE MANAGEMENT */}
+      {/* ======================================================== */}
+      {activeTab === "team" && (
+        <div className="space-y-6">
+          {/* Controls Bar */}
+          <div className="flex flex-col gap-4 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+            <div className="space-y-2">
+              <div>
+                <h3 className="text-base font-bold text-[var(--text)]">Meet the Team Showcase</h3>
+                <p className="text-xs text-[var(--text-secondary)]">
+                  Dynamically manage team members, faculty coordinators, advisors, and volunteers year-wise.
+                </p>
+              </div>
+
+              {/* Year Switcher */}
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                <span className="text-xs font-semibold text-[var(--text-secondary)]">Academic Year:</span>
+                <select
+                  value={selectedTeamYear}
+                  onChange={(e) => setSelectedTeamYear(e.target.value)}
+                  className="rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1.5 text-xs font-bold text-[var(--text)] outline-none transition-colors hover:border-[var(--accent)]"
+                >
+                  {Array.from(new Set([selectedTeamYear, ...teamYears]))
+                    .filter(Boolean)
+                    .map((yr) => (
+                      <option key={yr} value={yr}>
+                        {yr} {yr === "2025-26" ? "(Current)" : ""}
+                      </option>
+                    ))}
+                </select>
+
+                <button
+                  type="button"
+                  onClick={() => setNewYearModalOpen(true)}
+                  className="inline-flex items-center gap-1 rounded-lg border border-dashed border-[var(--border)] px-2.5 py-1.5 text-xs font-medium text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--text)] transition-colors"
+                  title="Add another academic year (e.g. 2026-27)"
+                >
+                  <Plus size={13} />
+                  <span>New Year</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2.5">
+              <div className="relative">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted)]" />
+                <input
+                  type="text"
+                  placeholder="Search members..."
+                  value={teamSearch}
+                  onChange={(e) => setTeamSearch(e.target.value)}
+                  className="rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] py-1.5 pl-8 pr-3 text-xs text-[var(--text)] placeholder:text-[var(--muted)] outline-none focus:border-[var(--accent)]"
+                />
+              </div>
+
+              <button
+                type="button"
+                onClick={() => void fetchTeamData()}
+                disabled={teamLoading}
+                title="Refresh team roster"
+                className="inline-flex size-8 items-center justify-center rounded-lg border border-[var(--border)] bg-[var(--surface)] text-[var(--text-secondary)] hover:text-[var(--text)] hover:bg-[var(--surface-muted)] transition-colors"
+              >
+                <RefreshCw size={14} className={teamLoading ? "animate-spin" : ""} />
+              </button>
+
+              <button
+                type="button"
+                onClick={handleOpenAddMemberModal}
+                className="button button-primary text-xs"
+              >
+                <UserPlus size={14} />
+                <span>Add Member</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Category Filter Pills */}
+          <div className="flex flex-wrap items-center gap-2 border-b border-[var(--border)] pb-3">
+            {[
+              { id: "all", label: "All Members", count: teamMembersList.length },
+              { id: "faculty", label: "Faculty Coordinators", count: teamMembersList.filter((m) => m.category === "faculty").length },
+              { id: "advisors", label: "Senior Advisors", count: teamMembersList.filter((m) => m.category === "advisors").length },
+              { id: "coordinators", label: "Coordinators", count: teamMembersList.filter((m) => m.category === "coordinators").length },
+              { id: "volunteers", label: "Volunteers", count: teamMembersList.filter((m) => m.category === "volunteers").length },
+            ].map((cat) => (
+              <button
+                key={cat.id}
+                type="button"
+                onClick={() => setSelectedTeamCategory(cat.id)}
+                className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1 text-xs font-semibold transition-all ${
+                  selectedTeamCategory === cat.id
+                    ? "bg-[var(--accent)] text-white shadow-sm"
+                    : "bg-[var(--surface-muted)] text-[var(--text-secondary)] hover:text-[var(--text)] hover:bg-[var(--surface-hover)]"
+                }`}
+              >
+                <span>{cat.label}</span>
+                <span
+                  className={`rounded-full px-1.5 py-0.2 text-[10px] ${
+                    selectedTeamCategory === cat.id
+                      ? "bg-white/20 text-white"
+                      : "bg-[var(--surface)] text-[var(--text-secondary)]"
+                  }`}
+                >
+                  {cat.count}
+                </span>
+              </button>
+            ))}
+          </div>
+
+          {/* Members Table */}
+          <div className="overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)] shadow-sm">
+            <div className="border-b border-[var(--border)] bg-[var(--surface-muted)] px-4 py-3 flex items-center justify-between">
+              <h3 className="text-xs font-bold text-[var(--text)]">
+                Team Showcase Members for {selectedTeamYear} ({filteredTeamMembers.length})
+              </h3>
+              <span className="text-[11px] text-[var(--muted)]">
+                Showing {filteredTeamMembers.length} of {teamMembersList.length} total
+              </span>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="border-b border-[var(--border)] bg-[var(--surface-muted)] text-[var(--text-secondary)]">
+                  <tr>
+                    <th className="px-3 py-3 font-semibold text-center w-12">#</th>
+                    <th className="px-4 py-3 font-semibold">Member</th>
+                    <th className="px-3 py-3 font-semibold">Category</th>
+                    <th className="px-4 py-3 font-semibold">Quote / Specialty</th>
+                    <th className="px-3 py-3 font-semibold text-center">Socials</th>
+                    <th className="px-4 py-3 text-right font-semibold">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[var(--border)]">
+                  {filteredTeamMembers.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="px-4 py-12 text-center text-[var(--muted)]">
+                        <Users size={32} className="mx-auto mb-2 opacity-30" />
+                        <p className="font-semibold">No members found</p>
+                        <p className="mt-1 text-xs">
+                          {teamSearch
+                            ? `No results matching "${teamSearch}".`
+                            : `No members added for Academic Year ${selectedTeamYear} in this category yet.`}
+                        </p>
+                        <button
+                          type="button"
+                          onClick={handleOpenAddMemberModal}
+                          className="button button-primary mt-4 inline-flex text-xs"
+                        >
+                          <Plus size={14} />
+                          <span>Add First Member</span>
+                        </button>
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredTeamMembers.map((member, idx) => {
+                      const catBadgeClasses = {
+                        faculty: "bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-500/30",
+                        advisors: "bg-sky-500/10 text-sky-700 dark:text-sky-300 border-sky-500/30",
+                        coordinators: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30",
+                        volunteers: "bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/30",
+                      }[member.category] || "bg-gray-500/10 text-gray-700 border-gray-500/30";
+
+                      const catLabel = {
+                        faculty: "Faculty",
+                        advisors: "Senior Advisor",
+                        coordinators: "Coordinator",
+                        volunteers: "Volunteer",
+                      }[member.category] || member.category;
+
+                      return (
+                        <tr key={member.id} className="hover:bg-[var(--surface-hover)] transition-colors">
+                          <td className="px-3 py-3 text-center font-mono font-bold text-[var(--muted)]">
+                            {member.displayOrder ?? idx + 1}
+                          </td>
+
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-3">
+                              <div className="size-10 shrink-0 overflow-hidden rounded-full border border-[var(--border)] bg-[var(--surface-muted)]">
+                                {member.image ? (
+                                  /* eslint-disable-next-line @next/next/no-img-element */
+                                  <img
+                                    src={member.image}
+                                    alt={member.name}
+                                    className="size-full object-cover"
+                                    style={{ objectPosition: member.objectPosition || "center 20%" }}
+                                  />
+                                ) : (
+                                  <div className="flex size-full items-center justify-center font-bold text-xs text-[var(--text-secondary)]">
+                                    {member.name.charAt(0)}
+                                  </div>
+                                )}
+                              </div>
+                              <div className="min-w-0">
+                                <div className="font-bold text-sm text-[var(--text)] truncate">{member.name}</div>
+                                <div className="text-[11px] text-[var(--text-secondary)] truncate">{member.role}</div>
+                              </div>
+                            </div>
+                          </td>
+
+                          <td className="px-3 py-3">
+                            <span
+                              className={`inline-block rounded-md border px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap ${catBadgeClasses}`}
+                            >
+                              {catLabel}
+                            </span>
+                          </td>
+
+                          <td className="px-4 py-3 max-w-xs">
+                            {member.quote && (
+                              <p className="italic text-[11px] text-[var(--text)] line-clamp-1">
+                                &ldquo;{member.quote}&rdquo;
+                              </p>
+                            )}
+                            {member.specialty && (
+                              <p className="text-[10px] text-[var(--text-secondary)] font-medium line-clamp-1">
+                                {member.specialty}
+                              </p>
+                            )}
+                            {!member.quote && !member.specialty && (
+                              <span className="text-[var(--muted)] italic text-[11px]">—</span>
+                            )}
+                          </td>
+
+                          <td className="px-3 py-3 text-center">
+                            <div className="flex items-center justify-center gap-1.5 text-[var(--text-secondary)]">
+                              {member.linkedin ? (
+                                <a
+                                  href={member.linkedin}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  title="LinkedIn"
+                                  className="text-sky-600 hover:text-sky-500"
+                                >
+                                  <Globe size={13} />
+                                </a>
+                              ) : null}
+                              {member.github ? (
+                                <a
+                                  href={member.github}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  title="GitHub"
+                                  className="text-neutral-700 dark:text-neutral-300 hover:text-[var(--accent)]"
+                                >
+                                  <Globe size={13} />
+                                </a>
+                              ) : null}
+                              {member.instagram ? (
+                                <a
+                                  href={member.instagram}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  title="Instagram"
+                                  className="text-pink-600 hover:text-pink-500"
+                                >
+                                  <Globe size={13} />
+                                </a>
+                              ) : null}
+                              {member.portfolio ? (
+                                <a
+                                  href={member.portfolio}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  title="Portfolio"
+                                  className="text-emerald-600 hover:text-emerald-500"
+                                >
+                                  <Globe size={13} />
+                                </a>
+                              ) : null}
+                              {!member.linkedin && !member.github && !member.instagram && !member.portfolio && (
+                                <span className="text-[var(--muted)] text-[10px]">—</span>
+                              )}
+                            </div>
+                          </td>
+
+                          <td className="px-4 py-3 text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditMemberModal(member)}
+                                title={`Edit ${member.name}`}
+                                className="inline-flex size-7 items-center justify-center rounded-md border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--surface-muted)] hover:text-[var(--text)] transition-colors"
+                              >
+                                <Pencil size={13} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setMemberToDelete(member);
+                                  setDeleteMemberModalOpen(true);
+                                }}
+                                title={`Delete ${member.name}`}
+                                className="inline-flex size-7 items-center justify-center rounded-md text-rose-600 hover:bg-rose-500/10 transition-colors"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Add / Edit Team Member Modal */}
+          {teamModalOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm overflow-y-auto">
+              <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-2xl">
+                <div className="mb-4 flex items-center justify-between border-b border-[var(--border)] pb-3">
+                  <div>
+                    <h3 className="text-base font-bold text-[var(--text)]">
+                      {editingMember ? `Edit Team Member: ${editingMember.name}` : "Add New Team Member"}
+                    </h3>
+                    <p className="text-xs text-[var(--text-secondary)]">
+                      Configure profile details, roles, academic year, and social handles.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTeamModalOpen(false);
+                      setEditingMember(null);
+                    }}
+                    className="p-1 text-[var(--muted)] hover:text-[var(--text)]"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+
+                <form onSubmit={handleSaveTeamMember} className="space-y-4">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold text-[var(--text)]">Academic Year *</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. 2025-26"
+                        value={memberForm.academicYear}
+                        onChange={(e) => setMemberForm({ ...memberForm, academicYear: e.target.value })}
+                        className="w-full rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs text-[var(--text)]"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold text-[var(--text)]">Category / Team Section *</label>
+                      <select
+                        value={memberForm.category}
+                        onChange={(e) =>
+                          setMemberForm({
+                            ...memberForm,
+                            category: e.target.value as "faculty" | "advisors" | "coordinators" | "volunteers",
+                          })
+                        }
+                        className="w-full rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs text-[var(--text)] font-semibold"
+                      >
+                        <option value="faculty">Faculty Coordinator</option>
+                        <option value="advisors">Senior Advisor</option>
+                        <option value="coordinators">Coordinator</option>
+                        <option value="volunteers">Volunteer</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold text-[var(--text)]">Full Name *</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. Dr. Manish Kumar Thakur or Name"
+                        value={memberForm.name}
+                        onChange={(e) => setMemberForm({ ...memberForm, name: e.target.value })}
+                        className="w-full rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs text-[var(--text)] font-medium"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold text-[var(--text)]">Role / Designation *</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. Associate Professor or Lead Coordinator"
+                        value={memberForm.role}
+                        onChange={(e) => setMemberForm({ ...memberForm, role: e.target.value })}
+                        className="w-full rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs text-[var(--text)]"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Photo Direct Upload & URL */}
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-[var(--text)]">Profile Photo</label>
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] p-3">
+                      {/* Avatar preview */}
+                      <div className="size-16 shrink-0 overflow-hidden rounded-full border-2 border-[var(--border)] bg-[var(--surface)] shadow-inner">
+                        {memberForm.image ? (
+                          /* eslint-disable-next-line @next/next/no-img-element */
+                          <img
+                            src={memberForm.image}
+                            alt="Preview"
+                            className="size-full object-cover"
+                            style={{ objectPosition: memberForm.objectPosition || "center 20%" }}
+                          />
+                        ) : (
+                          <div className="flex size-full items-center justify-center text-[var(--muted)]">
+                            <Upload size={20} />
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Direct File Upload & URL inputs */}
+                      <div className="flex-1 space-y-2 w-full">
+                        <div className="flex items-center gap-2">
+                          <label className="button button-primary cursor-pointer text-xs py-1.5 px-3">
+                            <Upload size={13} />
+                            <span>{imageUploading ? "Uploading..." : "Direct Upload Image"}</span>
+                            <input
+                              type="file"
+                              accept="image/png,image/jpeg,image/jpg,image/webp"
+                              disabled={imageUploading}
+                              onChange={handleImageFileChange}
+                              className="hidden"
+                            />
+                          </label>
+                          {memberForm.image && (
+                            <button
+                              type="button"
+                              onClick={() => setMemberForm({ ...memberForm, image: "" })}
+                              className="text-[11px] text-rose-500 hover:underline"
+                            >
+                              Clear
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            placeholder="Image path e.g. /images/team/name.png or paste URL"
+                            value={memberForm.image}
+                            onChange={(e) => setMemberForm({ ...memberForm, image: e.target.value })}
+                            className="w-full rounded-md border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1.5 text-xs text-[var(--text)] font-mono"
+                          />
+                        </div>
+                        <p className="text-[10px] text-[var(--muted)]">
+                          Direct upload saves into <code>public/images/team/</code> and sets the relative path automatically.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-[var(--text)]">Image Focus (CSS)</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. center 20%"
+                      value={memberForm.objectPosition}
+                      onChange={(e) => setMemberForm({ ...memberForm, objectPosition: e.target.value })}
+                      className="w-full rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs text-[var(--text)] font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-[var(--text)]">Quote / Bio Headline</label>
+                    <textarea
+                      rows={2}
+                      placeholder="e.g. Fostering competitive programming culture and research excellence"
+                      value={memberForm.quote}
+                      onChange={(e) => setMemberForm({ ...memberForm, quote: e.target.value })}
+                      className="w-full rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs text-[var(--text)]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-[var(--text)]">Specialty / Focus Tag</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Algorithm Design, Web Dev, ICPC Architecture"
+                      value={memberForm.specialty}
+                      onChange={(e) => setMemberForm({ ...memberForm, specialty: e.target.value })}
+                      className="w-full rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs text-[var(--text)]"
+                    />
+                  </div>
+
+                  {/* Social Handles */}
+                  <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] p-3 space-y-3">
+                    <div className="text-xs font-bold text-[var(--text)]">Social Links (Optional)</div>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div>
+                        <label className="mb-1 block text-[11px] font-semibold text-[var(--text-secondary)]">LinkedIn URL</label>
+                        <input
+                          type="url"
+                          placeholder="https://www.linkedin.com/in/..."
+                          value={memberForm.linkedin}
+                          onChange={(e) => setMemberForm({ ...memberForm, linkedin: e.target.value })}
+                          className="w-full rounded-md border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1.5 text-xs text-[var(--text)]"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="mb-1 block text-[11px] font-semibold text-[var(--text-secondary)]">GitHub URL</label>
+                        <input
+                          type="url"
+                          placeholder="https://github.com/..."
+                          value={memberForm.github}
+                          onChange={(e) => setMemberForm({ ...memberForm, github: e.target.value })}
+                          className="w-full rounded-md border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1.5 text-xs text-[var(--text)]"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="mb-1 block text-[11px] font-semibold text-[var(--text-secondary)]">Instagram URL</label>
+                        <input
+                          type="url"
+                          placeholder="https://instagram.com/..."
+                          value={memberForm.instagram}
+                          onChange={(e) => setMemberForm({ ...memberForm, instagram: e.target.value })}
+                          className="w-full rounded-md border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1.5 text-xs text-[var(--text)]"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="mb-1 block text-[11px] font-semibold text-[var(--text-secondary)]">Portfolio / Website</label>
+                        <input
+                          type="url"
+                          placeholder="https://..."
+                          value={memberForm.portfolio}
+                          onChange={(e) => setMemberForm({ ...memberForm, portfolio: e.target.value })}
+                          className="w-full rounded-md border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1.5 text-xs text-[var(--text)]"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+                    <div>
+                      <label className="mb-1 block text-xs font-semibold text-[var(--text)]">Display Order</label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={memberForm.displayOrder}
+                        onChange={(e) => setMemberForm({ ...memberForm, displayOrder: parseInt(e.target.value, 10) || 0 })}
+                        className="w-24 rounded-md border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1.5 text-xs text-[var(--text)] text-center font-mono"
+                      />
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTeamModalOpen(false);
+                          setEditingMember(null);
+                        }}
+                        className="button button-secondary text-xs"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={teamSubmitting}
+                        className="button button-primary text-xs"
+                      >
+                        <Save size={14} />
+                        <span>{teamSubmitting ? "Saving..." : editingMember ? "Update Member" : "Save Member"}</span>
+                      </button>
+                    </div>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* Delete Member Confirmation Modal */}
+          {deleteMemberModalOpen && memberToDelete && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+              <div className="w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-2xl">
+                <div className="mb-4 flex items-center gap-3 text-rose-600 dark:text-rose-400">
+                  <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-rose-500/15">
+                    <Trash2 size={20} />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-[var(--text)]">Delete Team Member</h3>
+                    <p className="text-xs text-[var(--text-secondary)]">Permanent removal from showcase</p>
+                  </div>
+                </div>
+
+                <div className="mb-5 space-y-3 text-xs text-[var(--text-secondary)]">
+                  <p>Are you sure you want to remove this member from the Meet the Team showcase?</p>
+                  <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-muted)] p-3.5">
+                    <div className="font-bold text-sm text-[var(--text)]">{memberToDelete.name}</div>
+                    <div className="text-xs text-[var(--text-secondary)]">{memberToDelete.role}</div>
+                    <div className="mt-1 font-mono text-[10px] text-[var(--muted)]">
+                      Academic Year: {memberToDelete.academicYear} | Category: {memberToDelete.category}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-end gap-2.5 border-t border-[var(--border)] pt-4">
+                  <button
+                    type="button"
+                    disabled={teamSubmitting}
+                    onClick={() => {
+                      setDeleteMemberModalOpen(false);
+                      setMemberToDelete(null);
+                    }}
+                    className="button button-secondary text-xs"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={teamSubmitting}
+                    onClick={() => void handleConfirmDeleteTeamMember()}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-rose-600 px-3.5 py-2 text-xs font-bold text-white shadow-sm hover:bg-rose-700 disabled:opacity-50 transition-colors"
+                  >
+                    <Trash2 size={13} />
+                    <span>{teamSubmitting ? "Deleting..." : "Confirm Delete"}</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* New Academic Year Modal */}
+          {newYearModalOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+              <div className="w-full max-w-sm rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-2xl">
+                <div className="mb-4">
+                  <h3 className="text-base font-bold text-[var(--text)]">Add New Academic Year</h3>
+                  <p className="text-xs text-[var(--text-secondary)]">
+                    Create a new year roster (e.g. 2026-27) for future team showcases.
+                  </p>
+                </div>
+
+                <form onSubmit={handleAddAcademicYear} className="space-y-4">
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-[var(--text)]">Academic Year Name *</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. 2026-27"
+                      value={newYearInput}
+                      onChange={(e) => setNewYearInput(e.target.value)}
+                      className="w-full rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs font-mono font-bold text-[var(--text)]"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2 border-t border-[var(--border)] pt-4">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNewYearModalOpen(false);
+                        setNewYearInput("");
+                      }}
+                      className="button button-secondary text-xs"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={!newYearInput.trim()}
+                      className="button button-primary text-xs"
+                    >
+                      <Plus size={14} />
+                      <span>Create & Switch</span>
+                    </button>
+                  </div>
+                </form>
               </div>
             </div>
           )}

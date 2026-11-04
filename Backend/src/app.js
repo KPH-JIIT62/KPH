@@ -38,6 +38,18 @@ function createApp({ env, pool, verifyToken, now }) {
 
   app.get("/api/health", (req, res) => res.json({ ok: true, service: "kph-api", version: "1.0.2", relay: "GMAIL_APPS_SCRIPT" })); // public
 
+  const adminService = createAdminService(pool, { now });
+
+  // Public Team Showcase API (loads Meet the Team data dynamically)
+  app.get("/api/team", async (req, res, next) => {
+    try {
+      const year = typeof req.query.year === "string" ? req.query.year.trim() : null;
+      res.json(await adminService.getTeamShowcase({ academicYear: year }));
+    } catch (err) {
+      next(err);
+    }
+  });
+
   const requireLogin = authenticate({ verifyToken, userService, allowedEmailDomain: env.allowedEmailDomain });
   app.use("/api/users", requireLogin, createUsersRouter(createUsersController(userService)));
   const contestService = createContestService(pool, userService, { now });
@@ -46,7 +58,6 @@ function createApp({ env, pool, verifyToken, now }) {
   const sessionService = createSessionService(pool, userService, { now });
   app.use("/api/sessions", requireLogin, createSessionsRouter(createSessionsController(sessionService)));
 
-  const adminService = createAdminService(pool, { now });
   app.use("/api/admin", requireLogin, requireAdmin, createAdminRouter(createAdminController(adminService)));
 
   app.use(notFound);

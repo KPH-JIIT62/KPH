@@ -605,9 +605,73 @@ function getInitials(name: string) {
 export default function TeamPage() {
   const [activeRole, setActiveRole] = useState<RoleCategory>("faculty");
   const [selectedIndex, setSelectedIndex] = useState<number>(0);
+  const [allMembers, setAllMembers] = useState<TeamMember[]>(teamMembers);
+  const [availableYears, setAvailableYears] = useState<string[]>(["2025-26"]);
+  const [selectedYear, setSelectedYear] = useState<string>("2025-26");
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+
+  // Dynamically load members for selected academic year
+  useEffect(() => {
+    let isMounted = true;
+    async function loadTeam() {
+      try {
+        setIsLoading(true);
+        const apiUrl = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:5001").replace(/\/$/, "");
+        const res = await fetch(`${apiUrl}/api/team?year=${encodeURIComponent(selectedYear)}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!isMounted) return;
+        if (Array.isArray(data.years) && data.years.length > 0) {
+          setAvailableYears((prev) => {
+            const merged = new Set([...data.years, ...prev, selectedYear, "2025-26"]);
+            return Array.from(merged).filter(Boolean);
+          });
+        }
+        if (Array.isArray(data.members)) {
+          const mapped: TeamMember[] = data.members.map((m: {
+            id?: string;
+            name: string;
+            role: string;
+            category: RoleCategory;
+            image?: string;
+            objectPosition?: string;
+            quote?: string;
+            specialty?: string;
+            linkedin?: string;
+            github?: string;
+            instagram?: string;
+            portfolio?: string;
+          }) => ({
+            id: m.id || m.name,
+            name: m.name,
+            role: m.role,
+            category: m.category,
+            image: m.image || undefined,
+            objectPosition: m.objectPosition || "center 20%",
+            quote: m.quote || undefined,
+            nameGradient: THEME_NAME_GRADIENT,
+            specialty: m.specialty || undefined,
+            linkedin: m.linkedin || undefined,
+            github: m.github || undefined,
+            instagram: m.instagram || undefined,
+            portfolio: m.portfolio || undefined,
+          }));
+          setAllMembers(mapped);
+        }
+      } catch {
+        // Fall back gracefully to bundled static teamMembers
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    }
+    loadTeam();
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedYear]);
 
   // Filter members by the selected category
-  const roleMembers = teamMembers.filter((m) => {
+  const roleMembers = allMembers.filter((m) => {
     if (activeRole === "faculty") return m.category === "faculty";
     if (activeRole === "advisors") return m.category === "advisors";
     if (activeRole === "coordinators") return m.category === "coordinators";
@@ -721,6 +785,25 @@ export default function TeamPage() {
           <h1 className="team-hero-title">
             Meet the Team
           </h1>
+          <div className="team-year-badge-wrap">
+            <select
+              value={selectedYear}
+              onChange={(e) => {
+                setSelectedYear(e.target.value);
+                setSelectedIndex(0);
+              }}
+              className="team-year-badge-select"
+              aria-label="Select Academic Year"
+            >
+              {Array.from(new Set([selectedYear, ...availableYears]))
+                .filter(Boolean)
+                .map((yr) => (
+                  <option key={yr} value={yr}>
+                    Academic Year {yr} {yr === "2025-26" ? "(Current)" : ""}
+                  </option>
+                ))}
+            </select>
+          </div>
         </header>
 
         {/* Main Container */}
@@ -862,12 +945,19 @@ export default function TeamPage() {
                     "linear-gradient(135deg, #38bdf8 0%, #818cf8 50%, #c084fc 100%)",
                 }}
               >
-                Senior Advisors
+                {activeRole === "faculty"
+                  ? "Faculty Coordinators"
+                  : activeRole === "advisors"
+                  ? "Senior Advisors"
+                  : activeRole === "coordinators"
+                  ? "Coordinators"
+                  : "Volunteers"}
               </span>
             </h2>
             <p className="gdg-bio-text" style={{ maxWidth: "600px", margin: "14px auto 0" }}>
-              Senior student advisors and alumni mentoring ICPC regionals,
-              contest curation standards, and technical initiatives at KPH.
+              {allMembers.length === 0
+                ? `Roster updates for Academic Year ${selectedYear} are currently being curated by the administrators.`
+                : `No members listed under this category for Academic Year ${selectedYear}.`}
             </p>
           </div>
         )}

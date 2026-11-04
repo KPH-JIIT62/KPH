@@ -24,6 +24,15 @@ function createAdminRouter(controller) {
   router.post("/access", controller.addAdminAccess);
   router.delete("/access/:id", controller.removeAdminAccess);
 
+  // Team Showcase Management
+  router.get("/team", controller.listTeamMembers);
+  router.get("/team/years", controller.listTeamYears);
+  router.post("/team/years", controller.createTeamYear);
+  router.post("/team", controller.createTeamMember);
+  router.post("/team/upload", controller.uploadTeamImage);
+  router.patch("/team/:id", controller.updateTeamMember);
+  router.delete("/team/:id", controller.deleteTeamMember);
+
   return router;
 }
 
