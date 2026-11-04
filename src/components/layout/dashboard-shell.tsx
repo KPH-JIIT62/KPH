@@ -6,10 +6,12 @@ import { usePathname } from "next/navigation";
 import {
   ChevronDown,
   LogOut,
+  Menu,
   Moon,
   ShieldCheck,
   Sun,
   User,
+  X,
 } from "lucide-react";
 import { navigation } from "@/config/navigation";
 import { BrandLogo } from "@/components/brand-logo";
@@ -118,8 +120,13 @@ function TopNavigation() {
   const pathname = usePathname();
   const { theme, toggleTheme } = useTheme();
   const { account } = useAccount();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const themeLabel =
     theme === "dark" ? "Switch to light theme" : "Switch to dark theme";
+
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [pathname]);
 
   return (
     <header className="topbar">
@@ -128,6 +135,7 @@ function TopNavigation() {
           <BrandLogo className="brand-logo-nav" />
         </Link>
 
+        {/* Desktop Navigation - Hidden on Mobile */}
         <nav className="topbar-nav" aria-label="Main navigation">
           {navigation.map((group) =>
             group.items.map((item) => {
@@ -171,8 +179,58 @@ function TopNavigation() {
             {theme === "dark" ? <Sun size={17} aria-hidden="true" /> : <Moon size={17} aria-hidden="true" />}
           </button>
           <ProfileMenu />
+
+          {/* Mobile Hamburger Menu Toggle Button */}
+          <button
+            type="button"
+            className="mobile-menu-btn"
+            onClick={() => setMobileMenuOpen((prev) => !prev)}
+            aria-label={mobileMenuOpen ? "Close navigation menu" : "Open navigation menu"}
+            aria-expanded={mobileMenuOpen}
+          >
+            {mobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
+          </button>
         </div>
       </div>
+
+      {/* Mobile Navigation Drawer - Only shown when toggled on phone */}
+      {mobileMenuOpen && (
+        <div className="mobile-nav-drawer" role="dialog" aria-label="Mobile Navigation Menu">
+          <nav className="mobile-nav-list" aria-label="Mobile menu navigation">
+            {navigation.map((group) =>
+              group.items.map((item) => {
+                const active =
+                  item.href === "/dashboard"
+                    ? pathname === item.href
+                    : pathname.startsWith(item.href);
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={() => setMobileMenuOpen(false)}
+                    className={`mobile-nav-link${active ? " mobile-nav-link-active" : ""}`}
+                    aria-current={active ? "page" : undefined}
+                  >
+                    <item.icon size={18} strokeWidth={1.8} aria-hidden="true" />
+                    <span>{item.label}</span>
+                  </Link>
+                );
+              }),
+            )}
+            {account?.role === "ADMIN" && (
+              <Link
+                href="/dashboard/admin"
+                onClick={() => setMobileMenuOpen(false)}
+                className={`mobile-nav-link${pathname.startsWith("/dashboard/admin") ? " mobile-nav-link-active" : ""}`}
+                aria-current={pathname.startsWith("/dashboard/admin") ? "page" : undefined}
+              >
+                <ShieldCheck size={18} strokeWidth={1.8} style={{ color: "var(--accent)" }} aria-hidden="true" />
+                <span>Admin Center</span>
+              </Link>
+            )}
+          </nav>
+        </div>
+      )}
     </header>
   );
 }

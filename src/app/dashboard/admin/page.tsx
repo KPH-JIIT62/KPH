@@ -1537,19 +1537,19 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* Navigation Tabs */}
-      <div className="mb-6 flex border-b border-[var(--border)]">
+      {/* Navigation Tabs (Swipeable on Mobile) */}
+      <div className="mb-6 flex border-b border-[var(--border)] overflow-x-auto scrollbar-none gap-1 sm:gap-2 whitespace-nowrap -mx-4 px-4 sm:mx-0 sm:px-0">
         <button
           type="button"
           onClick={() => setActiveTab("contests")}
-          className={`flex items-center gap-2 border-b-2 px-5 py-3 text-sm font-semibold transition-colors ${
+          className={`shrink-0 flex items-center gap-2 border-b-2 px-3.5 sm:px-5 py-2.5 sm:py-3 text-xs sm:text-sm font-semibold transition-colors ${
             activeTab === "contests"
               ? "border-[var(--accent)] text-[var(--text)]"
               : "border-transparent text-[var(--text-secondary)] hover:text-[var(--text)]"
           }`}
         >
           <Trophy size={16} />
-          Contests Management
+          <span>Contests Management</span>
           <span className="rounded-full bg-[var(--surface-muted)] px-2 py-0.5 text-xs text-[var(--text-secondary)]">
             {contests.length}
           </span>
@@ -1558,27 +1558,27 @@ export default function AdminPage() {
         <button
           type="button"
           onClick={() => setActiveTab("certificates")}
-          className={`flex items-center gap-2 border-b-2 px-5 py-3 text-sm font-semibold transition-colors ${
+          className={`shrink-0 flex items-center gap-2 border-b-2 px-3.5 sm:px-5 py-2.5 sm:py-3 text-xs sm:text-sm font-semibold transition-colors ${
             activeTab === "certificates"
               ? "border-[var(--accent)] text-[var(--text)]"
               : "border-transparent text-[var(--text-secondary)] hover:text-[var(--text)]"
           }`}
         >
           <Award size={16} />
-          Leaderboard & Certificates
+          <span>Leaderboard & Certificates</span>
         </button>
 
         <button
           type="button"
           onClick={() => setActiveTab("access")}
-          className={`flex items-center gap-2 border-b-2 px-5 py-3 text-sm font-semibold transition-colors ${
+          className={`shrink-0 flex items-center gap-2 border-b-2 px-3.5 sm:px-5 py-2.5 sm:py-3 text-xs sm:text-sm font-semibold transition-colors ${
             activeTab === "access"
               ? "border-[var(--accent)] text-[var(--text)]"
               : "border-transparent text-[var(--text-secondary)] hover:text-[var(--text)]"
           }`}
         >
           <Users size={16} />
-          Admin Access IDs
+          <span>Admin Access IDs</span>
           <span className="rounded-full bg-[var(--surface-muted)] px-2 py-0.5 text-xs text-[var(--text-secondary)]">
             {admins.length}
           </span>
@@ -1587,14 +1587,14 @@ export default function AdminPage() {
         <button
           type="button"
           onClick={() => setActiveTab("team")}
-          className={`flex items-center gap-2 border-b-2 px-5 py-3 text-sm font-semibold transition-colors ${
+          className={`shrink-0 flex items-center gap-2 border-b-2 px-3.5 sm:px-5 py-2.5 sm:py-3 text-xs sm:text-sm font-semibold transition-colors ${
             activeTab === "team"
               ? "border-[var(--accent)] text-[var(--text)]"
               : "border-transparent text-[var(--text-secondary)] hover:text-[var(--text)]"
           }`}
         >
           <Sparkles size={16} />
-          Meet the Team
+          <span>Meet the Team</span>
           <span className="rounded-full bg-[var(--surface-muted)] px-2 py-0.5 text-xs text-[var(--text-secondary)]">
             {teamMembersList.length}
           </span>
@@ -1631,8 +1631,11 @@ export default function AdminPage() {
 
           {/* Contests Table */}
           <div className="overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)] shadow-sm">
+            <div className="flex items-center justify-between border-b border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1.5 text-[11px] text-[var(--muted)] sm:hidden">
+              <span>← Swipe table horizontally to view all columns →</span>
+            </div>
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
+              <table className="w-full min-w-[720px] text-left text-xs">
                 <thead className="border-b border-[var(--border)] bg-[var(--surface-muted)] text-[var(--text-secondary)]">
                   <tr>
                     <th className="px-4 py-3 font-semibold">Contest</th>
@@ -2760,8 +2763,12 @@ export default function AdminPage() {
                     </div>
                   ) : (
                     /* Flat Table View */
-                    <div className="overflow-x-auto rounded-xl border border-[var(--border)] bg-[var(--surface)]">
-                      <table className="w-full text-left text-xs">
+                    <div className="overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)]">
+                      <div className="flex items-center justify-between border-b border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1.5 text-[11px] text-[var(--muted)] sm:hidden">
+                        <span>← Swipe table horizontally to view all columns →</span>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full min-w-[700px] text-left text-xs">
                         <thead>
                           <tr className="border-b border-[var(--border)] bg-[var(--surface-muted)] text-[10px] uppercase font-bold tracking-wider text-[var(--muted)]">
                             <th className="px-3.5 py-3 w-10 text-center">#</th>
@@ -2845,7 +2852,8 @@ export default function AdminPage() {
                         </tbody>
                       </table>
                     </div>
-                  )}
+                  </div>
+                )}
                 </div>
 
                 {/* Modal Footer */}
@@ -3057,8 +3065,11 @@ export default function AdminPage() {
                   </div>
                 </div>
 
-                <div className="max-h-[500px] overflow-y-auto">
-                  <table className="w-full text-left text-xs">
+                <div className="flex items-center justify-between border-b border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1.5 text-[11px] text-[var(--muted)] sm:hidden">
+                  <span>← Swipe table horizontally to view all columns →</span>
+                </div>
+                <div className="max-h-[500px] overflow-x-auto overflow-y-auto">
+                  <table className="w-full min-w-[620px] text-left text-xs">
                     <thead className="sticky top-0 bg-[var(--surface-muted)] text-[var(--text-secondary)]">
                       <tr>
                         <th className="px-2.5 py-2 font-semibold text-center w-12">Rank</th>
@@ -3560,8 +3571,11 @@ export default function AdminPage() {
             <div className="border-b border-[var(--border)] bg-[var(--surface-muted)] px-4 py-3">
               <h3 className="text-xs font-bold text-[var(--text)]">Authorized Administrator IDs ({admins.length})</h3>
             </div>
+            <div className="flex items-center justify-between border-b border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1.5 text-[11px] text-[var(--muted)] sm:hidden">
+              <span>← Swipe table horizontally to view all columns →</span>
+            </div>
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
+              <table className="w-full min-w-[620px] text-left text-xs">
                 <thead className="border-b border-[var(--border)] bg-[var(--surface-muted)] text-[var(--text-secondary)]">
                   <tr>
                     <th className="px-4 py-3 font-semibold">Identifier (Email / ID)</th>
@@ -3750,15 +3764,15 @@ export default function AdminPage() {
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2.5">
-              <div className="relative">
+            <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto">
+              <div className="relative flex-1 sm:flex-initial min-w-[140px]">
                 <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted)]" />
                 <input
                   type="text"
                   placeholder="Search members..."
                   value={teamSearch}
                   onChange={(e) => setTeamSearch(e.target.value)}
-                  className="rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] py-1.5 pl-8 pr-3 text-xs text-[var(--text)] placeholder:text-[var(--muted)] outline-none focus:border-[var(--accent)]"
+                  className="w-full sm:w-44 rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] py-1.5 pl-8 pr-3 text-xs text-[var(--text)] placeholder:text-[var(--muted)] outline-none focus:border-[var(--accent)]"
                 />
               </div>
 
@@ -3775,7 +3789,7 @@ export default function AdminPage() {
               <button
                 type="button"
                 onClick={handleOpenAddMemberModal}
-                className="button button-primary text-xs"
+                className="button button-primary text-xs flex-1 sm:flex-initial justify-center"
               >
                 <UserPlus size={14} />
                 <span>Add Member</span>
@@ -3783,8 +3797,8 @@ export default function AdminPage() {
             </div>
           </div>
 
-          {/* Category Filter Pills */}
-          <div className="flex flex-wrap items-center gap-2 border-b border-[var(--border)] pb-3">
+          {/* Category Filter Pills (Swipeable on Mobile) */}
+          <div className="flex items-center gap-2 overflow-x-auto whitespace-nowrap scrollbar-none border-b border-[var(--border)] pb-3 -mx-4 px-4 sm:mx-0 sm:px-0">
             {[
               { id: "all", label: "All Members", count: teamMembersList.length },
               { id: "faculty", label: "Faculty Coordinators", count: teamMembersList.filter((m) => m.category === "faculty").length },
@@ -3796,7 +3810,7 @@ export default function AdminPage() {
                 key={cat.id}
                 type="button"
                 onClick={() => setSelectedTeamCategory(cat.id)}
-                className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1 text-xs font-semibold transition-all ${
+                className={`shrink-0 inline-flex items-center gap-1.5 rounded-full px-3.5 py-1 text-xs font-semibold transition-all ${
                   selectedTeamCategory === cat.id
                     ? "bg-[var(--accent)] text-white shadow-sm"
                     : "bg-[var(--surface-muted)] text-[var(--text-secondary)] hover:text-[var(--text)] hover:bg-[var(--surface-hover)]"
@@ -3827,8 +3841,12 @@ export default function AdminPage() {
               </span>
             </div>
 
+            <div className="flex items-center justify-between border-b border-[var(--border)] bg-[var(--surface-muted)] px-3 py-1.5 text-[11px] text-[var(--muted)] sm:hidden">
+              <span>← Swipe table horizontally to view all columns →</span>
+            </div>
+
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
+              <table className="w-full min-w-[700px] text-left text-xs">
                 <thead className="border-b border-[var(--border)] bg-[var(--surface-muted)] text-[var(--text-secondary)]">
                   <tr>
                     <th className="px-3 py-3 font-semibold text-center w-12">#</th>
