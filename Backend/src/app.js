@@ -3,6 +3,7 @@
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
+const path = require("path");
 const { authenticate } = require("./middleware/authenticate");
 const { notFound, errorHandler } = require("./middleware/errorHandler");
 const { createUserService } = require("./services/userService");
@@ -37,7 +38,8 @@ function createApp({ env, pool, verifyToken, now }) {
       maxAge: 600,
     }),
   );
-  app.use(express.json({ limit: "10mb" })); // turns JSON bodies into req.body; supports leaderboard uploads
+  app.use(express.json({ limit: "50mb" })); // turns JSON bodies into req.body; supports leaderboard and gallery uploads
+  app.use("/images/events", express.static(path.resolve(__dirname, "../../public/images/events")));
 
   app.get("/api/health", (req, res) => res.json({ ok: true, service: "kph-api", version: "1.0.2", relay: "GMAIL_APPS_SCRIPT" })); // public
 

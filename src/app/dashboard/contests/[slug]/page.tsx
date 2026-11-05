@@ -127,6 +127,26 @@ export default function ContestPage() {
   const isPast = !isUpcoming(contest);
   const hasGallery = Array.isArray(contest.gallery) && contest.gallery.length > 0;
 
+  // Identify whether user participated via the official leaderboard if registration row is missing
+  const standingFromLeaderboard = (() => {
+    if (!state.detail?.leaderboard?.entries || !account) return null;
+    const userEnrollment = account.profile?.enrollmentNo?.trim().toLowerCase();
+    const userEmail = account.email?.trim().toLowerCase();
+    const userHandle = account.profile?.hackerrankHandle?.trim().toLowerCase();
+
+    return state.detail.leaderboard.entries.find((e) => {
+      const eEnrollment = e.enrollmentNo?.trim().toLowerCase();
+      const eEmail = e.email?.trim().toLowerCase();
+      const eHandle = e.hackerRankHandle?.trim().toLowerCase();
+
+      return (
+        (userEnrollment && eEnrollment === userEnrollment) ||
+        (userEmail && eEmail === userEmail) ||
+        (userHandle && eHandle === userHandle)
+      );
+    });
+  })();
+
   const contestHeader = (
     <section className="page-heading mb-0">
       <div>
@@ -181,7 +201,7 @@ export default function ContestPage() {
 
       {/* Participation & Seating Plan Section (Keeps full details and seating plan as shown) */}
       {(() => {
-        if (registration) {
+        if (registration || (isPast && standingFromLeaderboard)) {
           return (
             <div className={slug === "execute-26-4" ? "execute-registration-columns" : undefined}>
               <div className="profile-panel">
@@ -190,13 +210,13 @@ export default function ContestPage() {
                   <Check size={13} aria-hidden="true" /> {isPast ? "You participated" : "You’re registered"}
                 </span>
                 <dl className="summary-list registered-details">
-                  {registration.teamName && (
+                  {registration?.teamName && (
                     <>
                       <dt>Team Name</dt>
                       <dd>{registration.teamName}</dd>
                     </>
                   )}
-                  {registration.members?.map((member) => (
+                  {registration?.members?.map((member) => (
                     <Fragment key={member.enrollmentNo}>
                       <dt>{member.role === "LEADER" ? "Team Leader" : "Team Member"}</dt>
                       <dd>
@@ -204,26 +224,33 @@ export default function ContestPage() {
                       </dd>
                     </Fragment>
                   ))}
-                  {!registration.teamName && (
+                  {!registration?.teamName && (
                     <>
                       <dt>Name</dt>
-                      <dd>{account.displayName}</dd>
+                      <dd>{standingFromLeaderboard?.displayName || account.displayName}</dd>
                       <dt>Enrollment number</dt>
-                      <dd>{account.profile.enrollmentNo}</dd>
+                      <dd>{standingFromLeaderboard?.enrollmentNo || account.profile.enrollmentNo || "—"}</dd>
                       <dt>Batch · Branch</dt>
                       <dd>
-                        {account.profile.batch} · {account.profile.branch}
+                        {account.profile.batch || standingFromLeaderboard?.batch || "—"} ·{" "}
+                        {account.profile.branch || standingFromLeaderboard?.branch || "—"}
                       </dd>
                       <dt>Year of Study</dt>
-                      <dd>{account.profile.academic.yearOfStudyLabel ?? "—"}</dd>
+                      <dd>{account.profile.academic.yearOfStudyLabel ?? "2nd Year"}</dd>
                       <dt>HackerRank ID</dt>
-                      <dd>{registration.hackerrankHandle}</dd>
+                      <dd>{registration?.hackerrankHandle || standingFromLeaderboard?.hackerRankHandle || account.profile.hackerrankHandle || "—"}</dd>
                       <dt>Registered on</dt>
-                      <dd>{formatContestDate(registration.createdAt)}</dd>
+                      <dd>
+                        {registration?.createdAt
+                          ? formatContestDate(registration.createdAt)
+                          : contest.startsAt
+                          ? formatContestDate(contest.startsAt)
+                          : "Contest Participant"}
+                      </dd>
                     </>
                   )}
                 </dl>
-                {!isPast && (
+                {!isPast && registration && (
                   slug === "execute-26-4" && registration.role !== "LEADER" ? (
                     <p className="panel-help">Only the team leader can withdraw this team registration.</p>
                   ) : (
@@ -237,16 +264,16 @@ export default function ContestPage() {
                   <h2>Seating Plan</h2>
                   <dl className="summary-list">
                     <dt>Team Name</dt>
-                    <dd>{registration.seatingPlan?.teamName || registration.teamName || "—"}</dd>
+                    <dd>{registration?.seatingPlan?.teamName || registration?.teamName || "—"}</dd>
                     <dt>Hall Name</dt>
-                    <dd>{registration.seatingPlan?.hallName || "—"}</dd>
+                    <dd>{registration?.seatingPlan?.hallName || "—"}</dd>
                     <dt>Lab Number</dt>
-                    <dd>{registration.seatingPlan?.labNumber || "—"}</dd>
+                    <dd>{registration?.seatingPlan?.labNumber || "—"}</dd>
                     <dt>System Number</dt>
-                    <dd>{registration.seatingPlan?.systemNumber || "—"}</dd>
+                    <dd>{registration?.seatingPlan?.systemNumber || "—"}</dd>
                   </dl>
-                  {(registration.seatingPlan?.message || (!registration.seatingPlan ? EXECUTE_SEATING_PLACEHOLDER : null)) && (
-                    <p className="panel-help">{registration.seatingPlan?.message || EXECUTE_SEATING_PLACEHOLDER}</p>
+                  {(registration?.seatingPlan?.message || (!registration?.seatingPlan ? EXECUTE_SEATING_PLACEHOLDER : null)) && (
+                    <p className="panel-help">{registration?.seatingPlan?.message || EXECUTE_SEATING_PLACEHOLDER}</p>
                   )}
                 </aside>
               )}

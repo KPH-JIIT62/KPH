@@ -716,16 +716,59 @@ export default function AdminPage() {
 
     setGalleryUploading(true);
     try {
-      const readAsBase64 = (file: File): Promise<{ base64: string; filename: string }> => {
-        return new Promise((resolve, reject) => {
+      const compressImage = (
+        file: File,
+        maxDim = 1280,
+        quality = 0.82
+      ): Promise<{ base64: string; filename: string }> => {
+        return new Promise((resolve) => {
           const reader = new FileReader();
-          reader.onload = () => resolve({ base64: reader.result as string, filename: file.name });
-          reader.onerror = reject;
+          reader.onload = (e) => {
+            const rawResult = (e.target?.result as string) || "";
+            const img = new Image();
+            img.onload = () => {
+              try {
+                let { width, height } = img;
+                if (width > maxDim || height > maxDim) {
+                  if (width > height) {
+                    height = Math.round((height * maxDim) / width);
+                    width = maxDim;
+                  } else {
+                    width = Math.round((width * maxDim) / height);
+                    height = maxDim;
+                  }
+                }
+                const canvas = document.createElement("canvas");
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext("2d");
+                if (!ctx) {
+                  resolve({ base64: rawResult, filename: file.name });
+                  return;
+                }
+                ctx.drawImage(img, 0, 0, width, height);
+                const dataUrl = canvas.toDataURL("image/jpeg", quality);
+                resolve({
+                  base64: dataUrl,
+                  filename: file.name.replace(/\.[^.]+$/, ".jpg"),
+                });
+              } catch {
+                resolve({ base64: rawResult, filename: file.name });
+              }
+            };
+            img.onerror = () => {
+              resolve({ base64: rawResult, filename: file.name });
+            };
+            img.src = rawResult;
+          };
+          reader.onerror = () => {
+            resolve({ base64: "", filename: file.name });
+          };
           reader.readAsDataURL(file);
         });
       };
 
-      const converted = await Promise.all(validFiles.map(readAsBase64));
+      const converted = await Promise.all(validFiles.map((f) => compressImage(f)));
       const res = await api<{ ok: boolean; gallery: ContestGalleryImage[] }>(
         `/api/admin/contests/${selectedContestForGallery.slug}/gallery/upload`,
         {
