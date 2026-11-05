@@ -32,6 +32,31 @@ function slugify(text) {
     .slice(0, 60);
 }
 
+function resolveGalleryUrls(gallery) {
+  if (!Array.isArray(gallery)) return [];
+  return gallery.map((item) => {
+    if (!item || !item.url) return item;
+    if (typeof item.url === "string" && item.url.startsWith("/images/events/")) {
+      const relPath = item.url.replace(/^\/?images\//, "images/");
+      const fullPath = path.resolve(__dirname, "../../../public", relPath);
+      if (fs.existsSync(fullPath)) {
+        try {
+          const ext = path.extname(fullPath).slice(1).toLowerCase();
+          const mime = ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
+          const data = fs.readFileSync(fullPath).toString("base64");
+          return {
+            ...item,
+            url: `data:${mime};base64,${data}`,
+          };
+        } catch {
+          return item;
+        }
+      }
+    }
+    return item;
+  });
+}
+
 function createAdminService(pool, { now = () => new Date() } = {}) {
   // Automatically self-heal database schema if migrations were not run on production DB
   let schemaEnsured = false;
@@ -117,17 +142,19 @@ function createAdminService(pool, { now = () => new Date() } = {}) {
       teamNameRequired: row.team_name_required !== undefined ? Boolean(row.team_name_required) : true,
       hackerrankRequired: Boolean(row.hackerrank_required),
       registrationsCount: row.registrations_count + (row.teams_count || 0),
-      gallery: Array.isArray(row.gallery)
-        ? row.gallery
-        : row.gallery && typeof row.gallery === "string"
-        ? (() => {
-            try {
-              return JSON.parse(row.gallery);
-            } catch {
-              return [];
-            }
-          })()
-        : [],
+      gallery: resolveGalleryUrls(
+        Array.isArray(row.gallery)
+          ? row.gallery
+          : row.gallery && typeof row.gallery === "string"
+          ? (() => {
+              try {
+                return JSON.parse(row.gallery);
+              } catch {
+                return [];
+              }
+            })()
+          : []
+      ),
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     }));
@@ -1245,7 +1272,7 @@ function createAdminService(pool, { now = () => new Date() } = {}) {
     await ensureAdminSchema();
     const { rows } = await pool.query("SELECT id, slug, title, gallery FROM contests WHERE slug = $1", [slug]);
     if (!rows[0]) throw new HttpError(404, "NOT_FOUND", "Contest not found.");
-    const gallery = Array.isArray(rows[0].gallery)
+    const rawGallery = Array.isArray(rows[0].gallery)
       ? rows[0].gallery
       : rows[0].gallery && typeof rows[0].gallery === "string"
       ? (() => {
@@ -1256,18 +1283,19 @@ function createAdminService(pool, { now = () => new Date() } = {}) {
           }
         })()
       : [];
+    const gallery = resolveGalleryUrls(rawGallery);
     return { ok: true, slug: rows[0].slug, title: rows[0].title, gallery };
   }
 
   async function updateContestGallery(slug, gallery) {
     await ensureAdminSchema();
-    const cleanGallery = Array.isArray(gallery) ? gallery : [];
+    const cleanGallery = resolveGalleryUrls(Array.isArray(gallery) ? gallery : []);
     const { rows } = await pool.query(
       "UPDATE contests SET gallery = $1::jsonb, updated_at = now() WHERE slug = $2 RETURNING id, slug, title, gallery",
       [JSON.stringify(cleanGallery), slug]
     );
     if (!rows[0]) throw new HttpError(404, "NOT_FOUND", "Contest not found.");
-    return { ok: true, slug: rows[0].slug, title: rows[0].title, gallery: rows[0].gallery };
+    return { ok: true, slug: rows[0].slug, title: rows[0].title, gallery: resolveGalleryUrls(rows[0].gallery) };
   }
 
   async function uploadContestGalleryImages(slug, payload = {}) {
@@ -1275,7 +1303,7 @@ function createAdminService(pool, { now = () => new Date() } = {}) {
     const { rows: contestRows } = await pool.query("SELECT id, slug, title, gallery FROM contests WHERE slug = $1", [slug]);
     if (!contestRows[0]) throw new HttpError(404, "NOT_FOUND", "Contest not found.");
 
-    const currentGallery = Array.isArray(contestRows[0].gallery)
+    const rawGallery = Array.isArray(contestRows[0].gallery)
       ? [...contestRows[0].gallery]
       : contestRows[0].gallery && typeof contestRows[0].gallery === "string"
       ? (() => {
@@ -1286,6 +1314,7 @@ function createAdminService(pool, { now = () => new Date() } = {}) {
           }
         })()
       : [];
+    const currentGallery = resolveGalleryUrls(rawGallery);
 
     const incoming = Array.isArray(payload.images) && payload.images.length > 0
       ? payload.images
@@ -1299,8 +1328,12 @@ function createAdminService(pool, { now = () => new Date() } = {}) {
 
     const cleanSlug = slugify(slug);
     const targetDir = path.resolve(__dirname, `../../../public/images/events/${cleanSlug}`);
-    if (!fs.existsSync(targetDir)) {
-      fs.mkdirSync(targetDir, { recursive: true });
+    try {
+      if (!fs.existsSync(targetDir)) {
+        fs.mkdirSync(targetDir, { recursive: true });
+      }
+    } catch {
+      // safe in read-only environment
     }
 
     const added = [];
@@ -1335,15 +1368,24 @@ function createAdminService(pool, { now = () => new Date() } = {}) {
         ext = "jpg";
       }
 
+      const mimeType = ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
+      const fullDataUrl = item.base64.startsWith("data:")
+        ? item.base64
+        : `data:${mimeType};base64,${rawBase64}`;
+
       const fileId = `event_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 6)}`;
       const finalFilename = `${fileId}.${ext}`;
       const targetFilePath = path.join(targetDir, finalFilename);
-      const buffer = Buffer.from(rawBase64, "base64");
-      fs.writeFileSync(targetFilePath, buffer);
+      try {
+        const buffer = Buffer.from(rawBase64, "base64");
+        fs.writeFileSync(targetFilePath, buffer);
+      } catch {
+        // safe in read-only filesystems
+      }
 
       const newImg = {
         id: fileId,
-        url: `/images/events/${cleanSlug}/${finalFilename}`,
+        url: fullDataUrl,
         caption: item.caption?.trim() || "",
         subtitle: item.subtitle?.trim() || "",
         tag: item.tag?.trim() || "",
@@ -1362,7 +1404,7 @@ function createAdminService(pool, { now = () => new Date() } = {}) {
       ok: true,
       slug,
       addedCount: added.length,
-      gallery: updatedRows[0].gallery,
+      gallery: resolveGalleryUrls(updatedRows[0].gallery),
     };
   }
 
@@ -1371,7 +1413,7 @@ function createAdminService(pool, { now = () => new Date() } = {}) {
     const { rows } = await pool.query("SELECT id, slug, gallery FROM contests WHERE slug = $1", [slug]);
     if (!rows[0]) throw new HttpError(404, "NOT_FOUND", "Contest not found.");
 
-    const currentGallery = Array.isArray(rows[0].gallery)
+    const rawGallery = Array.isArray(rows[0].gallery)
       ? rows[0].gallery
       : rows[0].gallery && typeof rows[0].gallery === "string"
       ? (() => {
@@ -1382,6 +1424,7 @@ function createAdminService(pool, { now = () => new Date() } = {}) {
           }
         })()
       : [];
+    const currentGallery = resolveGalleryUrls(rawGallery);
 
     const toDelete = currentGallery.find((img) => img.id === imageId || img.url === imageId);
     if (!toDelete) throw new HttpError(404, "NOT_FOUND", "Gallery image not found.");
@@ -1407,7 +1450,7 @@ function createAdminService(pool, { now = () => new Date() } = {}) {
       ok: true,
       slug,
       deletedId: imageId,
-      gallery: updatedRows[0].gallery,
+      gallery: resolveGalleryUrls(updatedRows[0].gallery),
     };
   }
 

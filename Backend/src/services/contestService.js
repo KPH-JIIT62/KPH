@@ -2,11 +2,38 @@
 // (the registration, and the HackerRank ID on the user's profile) inside ONE transaction,
 // so either both changes happen or neither does.
 // The person's Year of Study is read from their PROFILE here on the server; it is not stored on the registration.
+const path = require("path");
+const fs = require("fs");
 const { HttpError } = require("../utils/HttpError");
 const { registrationStatus, withdrawalDeadline, withdrawalOpen, WITHDRAWAL_CUTOFF_MINUTES, EXECUTE_WITHDRAWAL_CUTOFF } = require("../utils/contestStatus");
 const { isExecuteMandatory } = require("../utils/executeEligibility");
 const { getSeatingPlan } = require("../utils/executeSeatingPlan");
 const EXECUTE = "execute-26-4";
+
+function resolveGalleryUrls(gallery) {
+  if (!Array.isArray(gallery)) return [];
+  return gallery.map((item) => {
+    if (!item || !item.url) return item;
+    if (typeof item.url === "string" && item.url.startsWith("/images/events/")) {
+      const relPath = item.url.replace(/^\/?images\//, "images/");
+      const fullPath = path.resolve(__dirname, "../../../public", relPath);
+      if (fs.existsSync(fullPath)) {
+        try {
+          const ext = path.extname(fullPath).slice(1).toLowerCase();
+          const mime = ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
+          const data = fs.readFileSync(fullPath).toString("base64");
+          return {
+            ...item,
+            url: `data:${mime};base64,${data}`,
+          };
+        } catch {
+          return item;
+        }
+      }
+    }
+    return item;
+  });
+}
 
 // `at` is "now". The status is worked out here, on the server, so the browser can never get it wrong.
 const toPublicContest = (row, at) => {
@@ -32,17 +59,19 @@ const toPublicContest = (row, at) => {
     registrationOpen: status === "OPEN",
     withdrawalClosesAt: withdrawalDeadline(row), // 15 minutes before it starts; null while there is no start time
     withdrawalOpen: withdrawalOpen(row, at), // can a registered person still withdraw right now?
-    gallery: Array.isArray(row.gallery)
-      ? row.gallery
-      : row.gallery && typeof row.gallery === "string"
-      ? (() => {
-          try {
-            return JSON.parse(row.gallery);
-          } catch {
-            return [];
-          }
-        })()
-      : [],
+    gallery: resolveGalleryUrls(
+      Array.isArray(row.gallery)
+        ? row.gallery
+        : row.gallery && typeof row.gallery === "string"
+        ? (() => {
+            try {
+              return JSON.parse(row.gallery);
+            } catch {
+              return [];
+            }
+          })()
+        : []
+    ),
   };
 };
 const toPublicRegistration = (row) => ({
@@ -80,8 +109,26 @@ function createContestService(pool, userService, { now = () => new Date() } = {}
     const contestRow = rows[0];
     const isTeam = contestRow.participation_type === "TEAM" || slug === EXECUTE;
     let registration = null;
+
+    // Fetch user details to allow email/enrollment matching if user UUID differed
+    const userRes = await pool.query("SELECT id, email, enrollment_no, hackerrank_handle FROM users WHERE id = $1", [userId]);
+    const currentUser = userRes.rows[0];
+
     if (isTeam) {
-      const reg = await pool.query(`SELECT t.*, tm.role FROM contest_team_members tm JOIN contest_teams t ON t.id=tm.team_id WHERE t.contest_id=$1 AND tm.user_id=$2 AND tm.active AND t.status='ACTIVE'`, [contestRow.id, userId]);
+      let reg = await pool.query(
+        `SELECT t.*, tm.role FROM contest_team_members tm JOIN contest_teams t ON t.id=tm.team_id WHERE t.contest_id=$1 AND tm.user_id=$2 AND tm.active AND t.status='ACTIVE'`,
+        [contestRow.id, userId]
+      );
+      if (!reg.rows[0] && currentUser) {
+        reg = await pool.query(
+          `SELECT t.*, tm.role FROM contest_team_members tm
+           JOIN contest_teams t ON t.id=tm.team_id
+           JOIN users u ON u.id=tm.user_id
+           WHERE t.contest_id=$1 AND tm.active AND t.status='ACTIVE'
+             AND (LOWER(u.email) = LOWER($2) OR (u.enrollment_no IS NOT NULL AND u.enrollment_no = $3))`,
+          [contestRow.id, currentUser.email, currentUser.enrollment_no]
+        );
+      }
       if (reg.rows[0]) {
         const team = reg.rows[0];
         registration = { ...toTeamRegistration(team), role: team.role, members: await teamMembers(team.id) };
@@ -91,7 +138,18 @@ function createContestService(pool, userService, { now = () => new Date() } = {}
         }
       }
     } else {
-      const reg = await pool.query("SELECT * FROM contest_registrations WHERE contest_id = $1 AND user_id = $2", [contestRow.id, userId]);
+      let reg = await pool.query(
+        "SELECT * FROM contest_registrations WHERE contest_id = $1 AND user_id = $2",
+        [contestRow.id, userId]
+      );
+      if (!reg.rows[0] && currentUser) {
+        reg = await pool.query(
+          `SELECT r.* FROM contest_registrations r
+           JOIN users u ON u.id = r.user_id
+           WHERE r.contest_id = $1 AND (LOWER(u.email) = LOWER($2) OR (u.enrollment_no IS NOT NULL AND u.enrollment_no = $3))`,
+          [contestRow.id, currentUser.email, currentUser.enrollment_no]
+        );
+      }
       registration = reg.rows[0] ? toPublicRegistration(reg.rows[0]) : null;
     }
 
@@ -110,6 +168,32 @@ function createContestService(pool, userService, { now = () => new Date() } = {}
     } catch {
       // In case migration not applied yet
       leaderboard = null;
+    }
+
+    // If still no registration recorded, but user is on the published leaderboard, synthesize participation:
+    if (!registration && leaderboard && Array.isArray(leaderboard.entries) && currentUser) {
+      const userEnroll = currentUser.enrollment_no?.trim().toLowerCase();
+      const userEmail = currentUser.email?.trim().toLowerCase();
+      const userHandle = currentUser.hackerrank_handle?.trim().toLowerCase();
+
+      const matched = leaderboard.entries.find((e) => {
+        const eEnroll = e.enrollmentNo?.trim().toLowerCase();
+        const eEmail = e.email?.trim().toLowerCase();
+        const eHandle = e.hackerRankHandle?.trim().toLowerCase();
+        return (
+          (userEnroll && eEnroll === userEnroll) ||
+          (userEmail && eEmail === userEmail) ||
+          (userHandle && eHandle === userHandle)
+        );
+      });
+
+      if (matched) {
+        registration = {
+          id: `lb_${slug}_${userId}`,
+          hackerrankHandle: matched.hackerRankHandle || currentUser.hackerrank_handle || "",
+          createdAt: contestRow.starts_at || contestRow.created_at,
+        };
+      }
     }
 
     return {

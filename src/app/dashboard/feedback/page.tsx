@@ -77,8 +77,8 @@ export default function FeedbackPage() {
   const { profile } = useProfile();
   const api = useApi();
 
-  const [feedbackType, setFeedbackType] = useState<FeedbackType>("suggestion");
-  const [rating, setRating] = useState<number>(5);
+  const [feedbackType, setFeedbackType] = useState<FeedbackType | null>(null);
+  const [rating, setRating] = useState<number | null>(null);
   const [message, setMessage] = useState<string>("");
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [submitted, setSubmitted] = useState<boolean>(false);
@@ -88,6 +88,14 @@ export default function FeedbackPage() {
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
+    if (!feedbackType) {
+      setErrorMsg("Please select a feedback type.");
+      return;
+    }
+    if (!rating) {
+      setErrorMsg("Please select an experience rating.");
+      return;
+    }
     if (!message.trim() || message.trim().length < 5) {
       setErrorMsg("Please write at least 5 characters of feedback.");
       return;
@@ -118,8 +126,8 @@ export default function FeedbackPage() {
 
   function handleReset() {
     setMessage("");
-    setRating(5);
-    setFeedbackType("suggestion");
+    setRating(null);
+    setFeedbackType(null);
     setSubmitted(false);
     setErrorMsg(null);
   }
@@ -222,9 +230,15 @@ export default function FeedbackPage() {
               </label>
               <p className="text-[11px] text-[var(--muted)] mt-0.5">
                 Rating:{" "}
-                <span className="font-semibold text-[var(--accent)]">
-                  {RATINGS.find((r) => r.value === rating)?.label}
-                </span>
+                {rating ? (
+                  <span className="font-semibold text-[var(--accent)]">
+                    {RATINGS.find((r) => r.value === rating)?.label}
+                  </span>
+                ) : (
+                  <span className="font-medium text-[var(--muted)]">
+                    Select an emoji below
+                  </span>
+                )}
               </p>
             </div>
 
@@ -286,7 +300,7 @@ export default function FeedbackPage() {
           <div className="flex flex-col items-center justify-center pt-1 gap-2">
             <button
               type="submit"
-              disabled={submitting || !message.trim()}
+              disabled={submitting || !feedbackType || !rating || !message.trim()}
               className="button button-primary px-8 py-2.5 text-xs font-bold shadow-md rounded-xl justify-center w-auto min-w-[200px] disabled:opacity-50 transition-all hover:scale-[1.02] active:scale-[0.98]"
             >
               {submitting ? (
