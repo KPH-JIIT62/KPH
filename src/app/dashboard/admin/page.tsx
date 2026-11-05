@@ -30,12 +30,18 @@ import {
   Printer,
   Sparkles,
   Globe,
+  Images,
+  ImagePlus,
+  ArrowUp,
+  ArrowDown,
+  Image as ImageIcon,
 } from "lucide-react";
 import { useAccount } from "@/components/account-provider";
 import { useAuth } from "@/components/auth-provider";
 import { useApi } from "@/lib/use-api";
 import { ApiError } from "@/lib/api";
 import { AppLoader } from "@/components/app-loader";
+import type { ContestGalleryImage } from "@/types/contest";
 import type {
   AdminContest,
   LeaderboardParticipant,
@@ -177,6 +183,17 @@ export default function AdminPage() {
     teamNameRequired: true,
     hackerrankRequired: false,
   });
+
+  // Event Gallery Images State
+  const [galleryModalOpen, setGalleryModalOpen] = useState(false);
+  const [selectedContestForGallery, setSelectedContestForGallery] = useState<AdminContest | null>(null);
+  const [galleryImages, setGalleryImages] = useState<ContestGalleryImage[]>([]);
+  const [galleryUploading, setGalleryUploading] = useState(false);
+  const [gallerySaving, setGallerySaving] = useState(false);
+  const [newGalleryUrl, setNewGalleryUrl] = useState("");
+  const [newGalleryCaption, setNewGalleryCaption] = useState("");
+  const [newGallerySubtitle, setNewGallerySubtitle] = useState("");
+  const [newGalleryTag, setNewGalleryTag] = useState("Spotlight Award");
 
   // Delete Confirmation States
   const [contestToDelete, setContestToDelete] = useState<AdminContest | null>(null);
@@ -663,6 +680,194 @@ export default function AdminPage() {
     } finally {
       setContestDeleting(false);
     }
+  }
+
+  // -------------------------------------------------------------
+  // CONTEST EVENT GALLERY HANDLERS
+  // -------------------------------------------------------------
+  async function handleOpenEventGallery(contest: AdminContest) {
+    setSelectedContestForGallery(contest);
+    setGalleryModalOpen(true);
+    setNewGalleryUrl("");
+    setNewGalleryCaption("");
+    setNewGallerySubtitle("");
+    setNewGalleryTag("Spotlight Award");
+
+    try {
+      const res = await api<{ ok: boolean; gallery: ContestGalleryImage[] }>(
+        `/api/admin/contests/${contest.slug}/gallery`
+      );
+      setGalleryImages(res.gallery || []);
+    } catch {
+      setGalleryImages(contest.gallery || []);
+    }
+  }
+
+  async function handleUploadMultipleGalleryFiles(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = e.target.files;
+    if (!files || files.length === 0 || !selectedContestForGallery) return;
+
+    const fileList = Array.from(files);
+    const validFiles = fileList.filter((f) => f.type.startsWith("image/"));
+    if (validFiles.length === 0) {
+      setFeedback({ type: "error", message: "Please select valid image files (JPG, PNG, WEBP)." });
+      return;
+    }
+
+    setGalleryUploading(true);
+    try {
+      const readAsBase64 = (file: File): Promise<{ base64: string; filename: string }> => {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve({ base64: reader.result as string, filename: file.name });
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+      };
+
+      const converted = await Promise.all(validFiles.map(readAsBase64));
+      const res = await api<{ ok: boolean; gallery: ContestGalleryImage[] }>(
+        `/api/admin/contests/${selectedContestForGallery.slug}/gallery/upload`,
+        {
+          method: "POST",
+          body: {
+            images: converted.map((item) => ({
+              base64: item.base64,
+              filename: item.filename,
+              caption: "",
+              subtitle: "",
+              tag: "Highlights",
+            })),
+          },
+        }
+      );
+
+      setGalleryImages(res.gallery || []);
+      setContests((prev) =>
+        prev.map((c) =>
+          c.slug === selectedContestForGallery.slug ? { ...c, gallery: res.gallery } : c
+        )
+      );
+      setFeedback({
+        type: "success",
+        message: `Successfully uploaded ${converted.length} event photo(s)!`,
+      });
+    } catch (err) {
+      setFeedback({
+        type: "error",
+        message: err instanceof ApiError ? err.message : "Failed to upload gallery images.",
+      });
+    } finally {
+      setGalleryUploading(false);
+      e.target.value = "";
+    }
+  }
+
+  async function handleAddGalleryImageUrl() {
+    if (!newGalleryUrl.trim() || !selectedContestForGallery) return;
+    setGalleryUploading(true);
+    try {
+      const res = await api<{ ok: boolean; gallery: ContestGalleryImage[] }>(
+        `/api/admin/contests/${selectedContestForGallery.slug}/gallery/upload`,
+        {
+          method: "POST",
+          body: {
+            images: [
+              {
+                url: newGalleryUrl.trim(),
+                caption: newGalleryCaption.trim() || "",
+                subtitle: newGallerySubtitle.trim() || "",
+                tag: newGalleryTag.trim() || "Spotlight Award",
+              },
+            ],
+          },
+        }
+      );
+
+      setGalleryImages(res.gallery || []);
+      setContests((prev) =>
+        prev.map((c) =>
+          c.slug === selectedContestForGallery.slug ? { ...c, gallery: res.gallery } : c
+        )
+      );
+      setNewGalleryUrl("");
+      setNewGalleryCaption("");
+      setNewGallerySubtitle("");
+      setFeedback({ type: "success", message: "Photo added to event gallery!" });
+    } catch (err) {
+      setFeedback({
+        type: "error",
+        message: err instanceof ApiError ? err.message : "Failed to add photo URL.",
+      });
+    } finally {
+      setGalleryUploading(false);
+    }
+  }
+
+  async function handleDeleteGalleryImage(imageId: string) {
+    if (!selectedContestForGallery) return;
+    try {
+      const res = await api<{ ok: boolean; gallery: ContestGalleryImage[] }>(
+        `/api/admin/contests/${selectedContestForGallery.slug}/gallery/${encodeURIComponent(imageId)}`,
+        { method: "DELETE" }
+      );
+      setGalleryImages(res.gallery || []);
+      setContests((prev) =>
+        prev.map((c) =>
+          c.slug === selectedContestForGallery.slug ? { ...c, gallery: res.gallery } : c
+        )
+      );
+      setFeedback({ type: "success", message: "Event photo removed." });
+    } catch (err) {
+      setFeedback({
+        type: "error",
+        message: err instanceof ApiError ? err.message : "Failed to remove event photo.",
+      });
+    }
+  }
+
+  async function handleSaveGalleryChanges() {
+    if (!selectedContestForGallery) return;
+    setGallerySaving(true);
+    try {
+      const res = await api<{ ok: boolean; gallery: ContestGalleryImage[] }>(
+        `/api/admin/contests/${selectedContestForGallery.slug}/gallery`,
+        {
+          method: "PUT",
+          body: { gallery: galleryImages },
+        }
+      );
+      setGalleryImages(res.gallery || []);
+      setContests((prev) =>
+        prev.map((c) =>
+          c.slug === selectedContestForGallery.slug ? { ...c, gallery: res.gallery } : c
+        )
+      );
+      setFeedback({ type: "success", message: "Event gallery changes saved successfully!" });
+      setGalleryModalOpen(false);
+    } catch (err) {
+      setFeedback({
+        type: "error",
+        message: err instanceof ApiError ? err.message : "Failed to save gallery changes.",
+      });
+    } finally {
+      setGallerySaving(false);
+    }
+  }
+
+  function handleMoveGalleryImage(index: number, direction: "up" | "down") {
+    const targetIndex = direction === "up" ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= galleryImages.length) return;
+    const updated = [...galleryImages];
+    const [moved] = updated.splice(index, 1);
+    updated.splice(targetIndex, 0, moved);
+    setGalleryImages(updated);
+  }
+
+  function handleUpdateGalleryImageField(index: number, field: keyof ContestGalleryImage, value: string) {
+    setGalleryImages((prev) =>
+      prev.map((img, i) => (i === index ? { ...img, [field]: value } : img))
+    );
   }
 
   // Leaderboard & Certificates
@@ -1749,6 +1954,15 @@ export default function AdminPage() {
                             </button>
                             <button
                               type="button"
+                              onClick={() => handleOpenEventGallery(contest)}
+                              title="Manage Event Gallery Images"
+                              aria-label="Manage Event Gallery Images"
+                              className="rounded border border-[var(--border)] p-1.5 text-sky-500 hover:bg-sky-500/10 hover:border-sky-500"
+                            >
+                              <Images size={13} />
+                            </button>
+                            <button
+                              type="button"
                               onClick={() => handleOpenEditContest(contest)}
                               title="Edit Contest"
                               aria-label="Edit Contest"
@@ -2540,6 +2754,232 @@ export default function AdminPage() {
                     <Trash2 size={13} />
                     <span>{contestDeleting ? "Deleting..." : "Delete Contest"}</span>
                   </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Event Gallery Images Modal */}
+          {galleryModalOpen && selectedContestForGallery && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+              <div className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-2xl">
+                {/* Header */}
+                <div className="mb-5 flex items-center justify-between border-b border-[var(--border)] pb-3.5">
+                  <div className="flex items-center gap-2.5">
+                    <div className="rounded-lg bg-sky-500/15 p-2 text-sky-500">
+                      <Images size={20} />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h2 className="text-base sm:text-lg font-bold text-[var(--text)]">
+                          Event Gallery & Highlights
+                        </h2>
+                        <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+                          {selectedContestForGallery.title}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-[var(--muted)]">
+                        Upload multiple photos. Auto-scrolls every 3 seconds on contest page and pauses when hovered/held.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setGalleryModalOpen(false)}
+                    className="rounded-lg p-1.5 text-[var(--muted)] hover:bg-[var(--surface-muted)] hover:text-[var(--text)]"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+
+                {/* Upload Zone */}
+                <div className="space-y-4">
+                  <div className="rounded-xl border-2 border-dashed border-[var(--border)] bg-[var(--surface-muted)]/50 p-6 text-center transition hover:border-[var(--accent)] hover:bg-[var(--surface-muted)]">
+                    <input
+                      type="file"
+                      id="gallery-file-input"
+                      multiple
+                      accept="image/png,image/jpeg,image/webp,image/jpg"
+                      disabled={galleryUploading}
+                      onChange={handleUploadMultipleGalleryFiles}
+                      className="hidden"
+                    />
+                    <label
+                      htmlFor="gallery-file-input"
+                      className="flex flex-col items-center justify-center cursor-pointer"
+                    >
+                      <div className="mb-2 rounded-full bg-[var(--accent)]/10 p-3 text-[var(--accent)]">
+                        <ImagePlus size={24} />
+                      </div>
+                      <span className="text-xs font-bold text-[var(--text)]">
+                        {galleryUploading ? "Uploading photos to event gallery..." : "Click to select or drag & drop event photos"}
+                      </span>
+                      <span className="mt-1 text-[11px] text-[var(--muted)]">
+                        You can select multiple photos at once (JPG, PNG, WEBP up to 8MB each)
+                      </span>
+                    </label>
+                  </div>
+
+                  {/* Or Add by URL */}
+                  <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-muted)]/30 p-3.5">
+                    <div className="text-[11px] font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-2">
+                      Or Add Image by Direct URL
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
+                      <input
+                        type="url"
+                        placeholder="Paste Image URL (https://...)"
+                        value={newGalleryUrl}
+                        onChange={(e) => setNewGalleryUrl(e.target.value)}
+                        className="sm:col-span-6 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-xs text-[var(--text)]"
+                      />
+                      <input
+                        type="text"
+                        placeholder="Caption (e.g. Prize Winner)"
+                        value={newGalleryCaption}
+                        onChange={(e) => setNewGalleryCaption(e.target.value)}
+                        className="sm:col-span-4 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-xs text-[var(--text)]"
+                      />
+                      <button
+                        type="button"
+                        disabled={galleryUploading || !newGalleryUrl.trim()}
+                        onClick={handleAddGalleryImageUrl}
+                        className="sm:col-span-2 button button-primary text-xs py-1.5 justify-center disabled:opacity-50"
+                      >
+                        Add URL
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Gallery Images List */}
+                  <div>
+                    <div className="flex items-center justify-between mb-2.5">
+                      <span className="text-xs font-bold uppercase tracking-wider text-[var(--text)]">
+                        Current Showcase Photos ({galleryImages.length})
+                      </span>
+                      <span className="text-[11px] text-[var(--muted)]">
+                        {galleryImages.length === 0
+                          ? "No photos added yet — contest page gallery space is empty."
+                          : "Photos will auto-scroll in 3s."}
+                      </span>
+                    </div>
+
+                    {galleryImages.length === 0 ? (
+                      <div className="rounded-xl border border-dashed border-[var(--border)] p-8 text-center text-[var(--muted)] text-xs">
+                        <ImageIcon size={32} className="mx-auto mb-2 opacity-40" />
+                        No event photos uploaded yet. Once uploaded, the Event Gallery & Highlights carousel will appear on the contest page.
+                      </div>
+                    ) : (
+                      <div className="space-y-3 max-h-[380px] overflow-y-auto pr-1">
+                        {galleryImages.map((img, index) => (
+                          <div
+                            key={img.id || index}
+                            className="flex flex-col sm:flex-row items-start sm:items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface-muted)]/60 p-3 transition hover:border-[var(--border-strong)]"
+                          >
+                            {/* Thumbnail */}
+                            <div className="relative size-20 sm:size-24 rounded-lg overflow-hidden shrink-0 bg-black/40 border border-[var(--border)]">
+                              <img
+                                src={img.url}
+                                alt={img.caption || "Event image"}
+                                className="size-full object-cover"
+                              />
+                              <div className="absolute top-1 left-1 rounded bg-black/70 px-1.5 py-0.2 text-[9px] font-mono text-white">
+                                #{index + 1}
+                              </div>
+                            </div>
+
+                            {/* Metadata inputs */}
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 flex-1 min-w-0 w-full text-xs">
+                              <div>
+                                <label className="text-[10px] text-[var(--muted)] block mb-0.5">Tag / Category</label>
+                                <input
+                                  type="text"
+                                  placeholder="e.g. Spotlight Award"
+                                  value={img.tag || ""}
+                                  onChange={(e) => handleUpdateGalleryImageField(index, "tag", e.target.value)}
+                                  className="w-full rounded border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1 text-xs text-[var(--text)]"
+                                />
+                              </div>
+                              <div>
+                                <label className="text-[10px] text-[var(--muted)] block mb-0.5">Caption / Title</label>
+                                <input
+                                  type="text"
+                                  placeholder="e.g. Keyboard & Certificate Presentation"
+                                  value={img.caption || ""}
+                                  onChange={(e) => handleUpdateGalleryImageField(index, "caption", e.target.value)}
+                                  className="w-full rounded border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1 text-xs text-[var(--text)] font-semibold"
+                                />
+                              </div>
+                              <div>
+                                <label className="text-[10px] text-[var(--muted)] block mb-0.5">Subtitle</label>
+                                <input
+                                  type="text"
+                                  placeholder="e.g. Honoring top problem solvers"
+                                  value={img.subtitle || ""}
+                                  onChange={(e) => handleUpdateGalleryImageField(index, "subtitle", e.target.value)}
+                                  className="w-full rounded border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1 text-xs text-[var(--text)]"
+                                />
+                              </div>
+                            </div>
+
+                            {/* Reorder & Delete actions */}
+                            <div className="flex sm:flex-col items-center gap-1 shrink-0 self-end sm:self-center">
+                              <button
+                                type="button"
+                                disabled={index === 0}
+                                onClick={() => handleMoveGalleryImage(index, "up")}
+                                title="Move slide earlier"
+                                className="rounded border border-[var(--border)] p-1 text-[var(--text-secondary)] hover:bg-[var(--surface)] hover:text-[var(--text)] disabled:opacity-30"
+                              >
+                                <ArrowUp size={13} />
+                              </button>
+                              <button
+                                type="button"
+                                disabled={index === galleryImages.length - 1}
+                                onClick={() => handleMoveGalleryImage(index, "down")}
+                                title="Move slide later"
+                                className="rounded border border-[var(--border)] p-1 text-[var(--text-secondary)] hover:bg-[var(--surface)] hover:text-[var(--text)] disabled:opacity-30"
+                              >
+                                <ArrowDown size={13} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteGalleryImage(img.id)}
+                                title="Remove image from gallery"
+                                className="rounded border border-rose-500/30 p-1 text-rose-500 hover:bg-rose-500/10 hover:border-rose-500"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Modal Footer */}
+                <div className="mt-6 flex items-center justify-between border-t border-[var(--border)] pt-4">
+                  <span className="text-[11px] text-[var(--muted)]">
+                    {galleryImages.length} photo{galleryImages.length === 1 ? "" : "s"} ready for showcase
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setGalleryModalOpen(false)}
+                      className="button button-secondary text-xs px-4 py-2"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      disabled={gallerySaving}
+                      onClick={handleSaveGalleryChanges}
+                      className="button button-primary text-xs px-5 py-2 font-bold"
+                    >
+                      {gallerySaving ? "Saving..." : "Save Gallery Changes"}
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>

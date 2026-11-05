@@ -1,3 +1,5 @@
+import type { ContestGalleryImage } from "./contest";
+
 export type AdminContest = {
   id: string;
   slug: string;
@@ -17,6 +19,7 @@ export type AdminContest = {
   registrationClosesAt: string | null;
   registrationStatus: "SOON" | "OPEN" | "CLOSED";
   registrationsCount: number;
+  gallery?: ContestGalleryImage[];
   createdAt: string;
   updatedAt: string;
 };

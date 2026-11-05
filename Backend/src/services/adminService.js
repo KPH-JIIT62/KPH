@@ -62,7 +62,8 @@ function createAdminService(pool, { now = () => new Date() } = {}) {
           ADD COLUMN IF NOT EXISTS max_team_size INT NOT NULL DEFAULT 1,
           ADD COLUMN IF NOT EXISTS hackerrank_required BOOLEAN NOT NULL DEFAULT false,
           ADD COLUMN IF NOT EXISTS registration_starts_at TIMESTAMPTZ,
-          ADD COLUMN IF NOT EXISTS team_name_required BOOLEAN NOT NULL DEFAULT true;
+          ADD COLUMN IF NOT EXISTS team_name_required BOOLEAN NOT NULL DEFAULT true,
+          ADD COLUMN IF NOT EXISTS gallery JSONB NOT NULL DEFAULT '[]'::jsonb;
 
         ALTER TABLE contest_teams ALTER COLUMN hackerrank_handle DROP NOT NULL;
       `);
@@ -116,6 +117,17 @@ function createAdminService(pool, { now = () => new Date() } = {}) {
       teamNameRequired: row.team_name_required !== undefined ? Boolean(row.team_name_required) : true,
       hackerrankRequired: Boolean(row.hackerrank_required),
       registrationsCount: row.registrations_count + (row.teams_count || 0),
+      gallery: Array.isArray(row.gallery)
+        ? row.gallery
+        : row.gallery && typeof row.gallery === "string"
+        ? (() => {
+            try {
+              return JSON.parse(row.gallery);
+            } catch {
+              return [];
+            }
+          })()
+        : [],
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     }));
@@ -1226,12 +1238,189 @@ function createAdminService(pool, { now = () => new Date() } = {}) {
     };
   }
 
+  // -------------------------------------------------------------
+  // CONTEST EVENT GALLERY IMAGES
+  // -------------------------------------------------------------
+  async function getContestGallery(slug) {
+    await ensureAdminSchema();
+    const { rows } = await pool.query("SELECT id, slug, title, gallery FROM contests WHERE slug = $1", [slug]);
+    if (!rows[0]) throw new HttpError(404, "NOT_FOUND", "Contest not found.");
+    const gallery = Array.isArray(rows[0].gallery)
+      ? rows[0].gallery
+      : rows[0].gallery && typeof rows[0].gallery === "string"
+      ? (() => {
+          try {
+            return JSON.parse(rows[0].gallery);
+          } catch {
+            return [];
+          }
+        })()
+      : [];
+    return { ok: true, slug: rows[0].slug, title: rows[0].title, gallery };
+  }
+
+  async function updateContestGallery(slug, gallery) {
+    await ensureAdminSchema();
+    const cleanGallery = Array.isArray(gallery) ? gallery : [];
+    const { rows } = await pool.query(
+      "UPDATE contests SET gallery = $1::jsonb, updated_at = now() WHERE slug = $2 RETURNING id, slug, title, gallery",
+      [JSON.stringify(cleanGallery), slug]
+    );
+    if (!rows[0]) throw new HttpError(404, "NOT_FOUND", "Contest not found.");
+    return { ok: true, slug: rows[0].slug, title: rows[0].title, gallery: rows[0].gallery };
+  }
+
+  async function uploadContestGalleryImages(slug, payload = {}) {
+    await ensureAdminSchema();
+    const { rows: contestRows } = await pool.query("SELECT id, slug, title, gallery FROM contests WHERE slug = $1", [slug]);
+    if (!contestRows[0]) throw new HttpError(404, "NOT_FOUND", "Contest not found.");
+
+    const currentGallery = Array.isArray(contestRows[0].gallery)
+      ? [...contestRows[0].gallery]
+      : contestRows[0].gallery && typeof contestRows[0].gallery === "string"
+      ? (() => {
+          try {
+            return JSON.parse(contestRows[0].gallery);
+          } catch {
+            return [];
+          }
+        })()
+      : [];
+
+    const incoming = Array.isArray(payload.images) && payload.images.length > 0
+      ? payload.images
+      : payload.base64
+      ? [payload]
+      : [];
+
+    if (incoming.length === 0) {
+      throw new HttpError(400, "VALIDATION_ERROR", "At least one image is required.");
+    }
+
+    const cleanSlug = slugify(slug);
+    const targetDir = path.resolve(__dirname, `../../../public/images/events/${cleanSlug}`);
+    if (!fs.existsSync(targetDir)) {
+      fs.mkdirSync(targetDir, { recursive: true });
+    }
+
+    const added = [];
+    for (let i = 0; i < incoming.length; i++) {
+      const item = incoming[i];
+      if (!item.base64 || typeof item.base64 !== "string") {
+        if (item.url && typeof item.url === "string") {
+          const newImg = {
+            id: `img_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+            url: item.url.trim(),
+            caption: item.caption?.trim() || "",
+            subtitle: item.subtitle?.trim() || "",
+            tag: item.tag?.trim() || "",
+            createdAt: new Date().toISOString(),
+          };
+          currentGallery.push(newImg);
+          added.push(newImg);
+        }
+        continue;
+      }
+
+      const match = item.base64.match(/^data:image\/([a-zA-Z0-9+]+);base64,(.+)$/);
+      let ext = "jpg";
+      let rawBase64 = item.base64;
+      if (match) {
+        ext = match[1] === "jpeg" ? "jpg" : match[1].toLowerCase();
+        rawBase64 = match[2];
+      } else if (item.filename && item.filename.includes(".")) {
+        ext = item.filename.split(".").pop().toLowerCase();
+      }
+      if (!["png", "jpg", "jpeg", "webp"].includes(ext)) {
+        ext = "jpg";
+      }
+
+      const fileId = `event_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 6)}`;
+      const finalFilename = `${fileId}.${ext}`;
+      const targetFilePath = path.join(targetDir, finalFilename);
+      const buffer = Buffer.from(rawBase64, "base64");
+      fs.writeFileSync(targetFilePath, buffer);
+
+      const newImg = {
+        id: fileId,
+        url: `/images/events/${cleanSlug}/${finalFilename}`,
+        caption: item.caption?.trim() || "",
+        subtitle: item.subtitle?.trim() || "",
+        tag: item.tag?.trim() || "",
+        createdAt: new Date().toISOString(),
+      };
+      currentGallery.push(newImg);
+      added.push(newImg);
+    }
+
+    const { rows: updatedRows } = await pool.query(
+      "UPDATE contests SET gallery = $1::jsonb, updated_at = now() WHERE slug = $2 RETURNING id, slug, title, gallery",
+      [JSON.stringify(currentGallery), slug]
+    );
+
+    return {
+      ok: true,
+      slug,
+      addedCount: added.length,
+      gallery: updatedRows[0].gallery,
+    };
+  }
+
+  async function deleteContestGalleryImage(slug, imageId) {
+    await ensureAdminSchema();
+    const { rows } = await pool.query("SELECT id, slug, gallery FROM contests WHERE slug = $1", [slug]);
+    if (!rows[0]) throw new HttpError(404, "NOT_FOUND", "Contest not found.");
+
+    const currentGallery = Array.isArray(rows[0].gallery)
+      ? rows[0].gallery
+      : rows[0].gallery && typeof rows[0].gallery === "string"
+      ? (() => {
+          try {
+            return JSON.parse(rows[0].gallery);
+          } catch {
+            return [];
+          }
+        })()
+      : [];
+
+    const toDelete = currentGallery.find((img) => img.id === imageId || img.url === imageId);
+    if (!toDelete) throw new HttpError(404, "NOT_FOUND", "Gallery image not found.");
+
+    if (toDelete.url && toDelete.url.startsWith("/images/events/")) {
+      const localFilePath = path.resolve(__dirname, `../../../public${toDelete.url}`);
+      try {
+        if (fs.existsSync(localFilePath)) {
+          fs.unlinkSync(localFilePath);
+        }
+      } catch (err) {
+        console.warn("[adminService] Failed to delete local event image file:", err.message);
+      }
+    }
+
+    const newGallery = currentGallery.filter((img) => img.id !== imageId && img.url !== imageId);
+    const { rows: updatedRows } = await pool.query(
+      "UPDATE contests SET gallery = $1::jsonb, updated_at = now() WHERE slug = $2 RETURNING id, slug, title, gallery",
+      [JSON.stringify(newGallery), slug]
+    );
+
+    return {
+      ok: true,
+      slug,
+      deletedId: imageId,
+      gallery: updatedRows[0].gallery,
+    };
+  }
+
   return {
     listContests,
     createContest,
     updateContest,
     deleteContest,
     getContestRegistrations,
+    getContestGallery,
+    updateContestGallery,
+    uploadContestGalleryImages,
+    deleteContestGalleryImage,
     previewLeaderboard,
     publishLeaderboard,
     getLeaderboard,

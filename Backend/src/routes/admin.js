@@ -12,6 +12,10 @@ function createAdminRouter(controller) {
   router.get("/contests/:slug/leaderboard", controller.getLeaderboard);
   router.post("/contests/:slug/leaderboard", controller.publishLeaderboard);
   router.delete("/contests/:slug/leaderboard", controller.deleteLeaderboard);
+  router.get("/contests/:slug/gallery", controller.getContestGallery);
+  router.put("/contests/:slug/gallery", controller.updateContestGallery);
+  router.post("/contests/:slug/gallery/upload", controller.uploadContestGalleryImages);
+  router.delete("/contests/:slug/gallery/:imageId", controller.deleteContestGalleryImage);
 
   // Certificates & Leaderboard
   router.post("/certificates/preview", controller.previewLeaderboard);
