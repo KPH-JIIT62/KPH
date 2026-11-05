@@ -31,35 +31,35 @@ const FEEDBACK_TYPES: {
     id: "appreciation",
     label: "Appreciation",
     shortLabel: "Appreciation",
-    emoji: "🎉",
+    emoji: "",
     description: "Kudos for recent events, workshops, or contests",
   },
   {
     id: "suggestion",
     label: "Suggestion & Improvement",
     shortLabel: "Suggestion",
-    emoji: "💡",
+    emoji: "",
     description: "Ideas to enhance our platform, sessions, or club format",
   },
   {
     id: "event_idea",
     label: "Future Event & Workshop Idea",
     shortLabel: "Event Idea",
-    emoji: "🚀",
+    emoji: "",
     description: "Topics, guest lectures, hackathons, or contests you want",
   },
   {
     id: "issue_bug",
     label: "Club Issue / Operational Bug",
     shortLabel: "Issue / Bug",
-    emoji: "⚠️",
+    emoji: "",
     description: "Operational problems, website bugs, or difficulties faced",
   },
   {
     id: "general_query",
     label: "General Member Query",
     shortLabel: "General Query",
-    emoji: "💬",
+    emoji: "",
     description: "Questions about community initiatives, doubts, or roadmap",
   },
 ];
@@ -144,9 +144,9 @@ export default function FeedbackPage() {
             <CheckCircle2 size={32} />
           </div>
           <h2 className="text-xl sm:text-2xl font-bold text-[var(--text)] text-center">
-            Thank You, {displayName}! 🎉
+            Thank You, {displayName}!
           </h2>
-          <p className="mt-2 text-xs sm:text-sm text-[var(--text-secondary)] max-w-sm mx-auto text-center leading-relaxed">
+          <p className="mt-2 text-xs sm:text-sm text-[var(--text-secondary)] mx-auto text-center leading-relaxed">
             Your feedback has been received and dispatched to{" "}
             <span className="font-semibold text-[var(--text)]">kph.jiit@gmail.com</span>. The KPH
             Core Council reviews every suggestion weekly.

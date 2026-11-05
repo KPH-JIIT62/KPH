@@ -15,6 +15,15 @@ export type ContestRegistration = {
 export type RegistrationStatus = "SOON" | "OPEN" | "CLOSED";
 export type ParticipationType = "SOLO" | "TEAM";
 
+export type ContestGalleryImage = {
+  id: string;
+  url: string;
+  caption?: string;
+  subtitle?: string;
+  tag?: string;
+  createdAt?: string;
+};
+
 export type Contest = {
   id: string;
   slug: string;
@@ -37,6 +46,7 @@ export type Contest = {
   withdrawalClosesAt: string | null; // 15 minutes before it starts; null while there is no start time
   withdrawalOpen: boolean; // can a registered person still withdraw right now? (decided by the server)
   mandatory?: boolean;
+  gallery?: ContestGalleryImage[];
 };
 
 export type LeaderboardProblem = {

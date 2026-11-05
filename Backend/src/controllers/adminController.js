@@ -140,6 +140,26 @@ function createAdminController(adminService) {
     async uploadTeamImage(req, res) {
       res.status(201).json(await adminService.uploadTeamImage(req.body || {}));
     },
+
+    async getContestGallery(req, res) {
+      const { slug } = req.params;
+      res.json(await adminService.getContestGallery(slug));
+    },
+
+    async updateContestGallery(req, res) {
+      const { slug } = req.params;
+      res.json(await adminService.updateContestGallery(slug, req.body?.gallery));
+    },
+
+    async uploadContestGalleryImages(req, res) {
+      const { slug } = req.params;
+      res.status(201).json(await adminService.uploadContestGalleryImages(slug, req.body || {}));
+    },
+
+    async deleteContestGalleryImage(req, res) {
+      const { slug, imageId } = req.params;
+      res.json(await adminService.deleteContestGalleryImage(slug, imageId));
+    },
   };
 }
 

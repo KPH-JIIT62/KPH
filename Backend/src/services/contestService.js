@@ -32,6 +32,17 @@ const toPublicContest = (row, at) => {
     registrationOpen: status === "OPEN",
     withdrawalClosesAt: withdrawalDeadline(row), // 15 minutes before it starts; null while there is no start time
     withdrawalOpen: withdrawalOpen(row, at), // can a registered person still withdraw right now?
+    gallery: Array.isArray(row.gallery)
+      ? row.gallery
+      : row.gallery && typeof row.gallery === "string"
+      ? (() => {
+          try {
+            return JSON.parse(row.gallery);
+          } catch {
+            return [];
+          }
+        })()
+      : [],
   };
 };
 const toPublicRegistration = (row) => ({

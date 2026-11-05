@@ -7,6 +7,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ArrowLeft, CalendarClock, Check, Hourglass, MapPin } from "lucide-react";
 import { useAccount } from "@/components/account-provider";
 import { ContestHighlights } from "@/components/contests/contest-highlights";
+import { ContestEventGallery } from "@/components/contests/contest-event-gallery";
 import { ContestRegistrationForm, type RegistrationValues } from "@/components/contests/contest-registration-form";
 import { TeamRegistrationForm } from "@/components/contests/team-registration-form";
 import { WithdrawRegistration } from "@/components/contests/withdraw-registration";
@@ -124,87 +125,131 @@ export default function ContestPage() {
 
   const { contest, registration } = state.detail;
   const isPast = !isUpcoming(contest);
+  const hasGallery = Array.isArray(contest.gallery) && contest.gallery.length > 0;
+
+  const contestHeader = (
+    <section className="page-heading mb-0">
+      <div>
+        <h1>
+          {contest.title}
+          <span className="greeting-dot">.</span>
+        </h1>
+        <p className="contest-meta">
+          <CalendarClock size={15} aria-hidden="true" /> {formatContestWhen(contest.startsAt, contest.endsAt)}
+        </p>
+        {contest.venue && (
+          <p className="contest-meta">
+            <MapPin size={15} aria-hidden="true" /> Venue: {cleanVenue(contest.venue)}
+          </p>
+        )}
+        {contest.registrationStatus === "OPEN" && !registration && contest.registrationClosesAt && (
+          <p className="contest-meta contest-deadline">
+            <Hourglass size={15} aria-hidden="true" />{" "}
+            {contest.registrationStartsAt
+              ? formatRegistrationWindow(contest.registrationStartsAt, contest.registrationClosesAt)
+              : formatRegistrationDeadline(contest.registrationClosesAt)}
+          </p>
+        )}
+        <ContestHighlights contest={contest} />
+        {contest.registrationStatus === "OPEN" && !registration && (
+          <span className="status-pill is-open contest-registration-open">Registration Open</span>
+        )}
+        {contest.description && <p className="contest-description">{contest.description}</p>}
+      </div>
+    </section>
+  );
+
   return (
     <div className="section-page">
       {back}
-      <section className="page-heading">
-        <div>
-          <h1>
-            {contest.title}
-            <span className="greeting-dot">.</span>
-          </h1>
-          <p className="contest-meta">
-            <CalendarClock size={15} aria-hidden="true" /> {formatContestWhen(contest.startsAt, contest.endsAt)}
-          </p>
-          {contest.venue && (
-            <p className="contest-meta">
-              <MapPin size={15} aria-hidden="true" /> Venue: {cleanVenue(contest.venue)}
-            </p>
-          )}
-          {contest.registrationStatus === "OPEN" && !registration && contest.registrationClosesAt && (
-            <p className="contest-meta contest-deadline">
-              <Hourglass size={15} aria-hidden="true" />{" "}
-              {contest.registrationStartsAt
-                ? formatRegistrationWindow(contest.registrationStartsAt, contest.registrationClosesAt)
-                : formatRegistrationDeadline(contest.registrationClosesAt)}
-            </p>
-          )}
-          <ContestHighlights contest={contest} />
-          {contest.registrationStatus === "OPEN" && !registration && <span className="status-pill is-open contest-registration-open">Registration Open</span>}
-          {contest.description && <p className="contest-description">{contest.description}</p>}
-        </div>
-      </section>
 
+      {/* Top Section: Contest Info on Left, Event Gallery on Right covering the empty space */}
+      {hasGallery ? (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start mb-6">
+          <div className="lg:col-span-7">
+            {contestHeader}
+          </div>
+          <div className="lg:col-span-5">
+            <ContestEventGallery images={contest.gallery!} />
+          </div>
+        </div>
+      ) : (
+        <div className="mb-6">
+          {contestHeader}
+        </div>
+      )}
+
+      {/* Participation & Seating Plan Section (Keeps full details and seating plan as shown) */}
       {(() => {
         if (registration) {
           return (
             <div className={slug === "execute-26-4" ? "execute-registration-columns" : undefined}>
-            <div className="profile-panel">
-              {contest.mandatory && <span className="status-pill is-mandatory">MANDATORY</span>}
-              <span className="status-pill is-done">
-                <Check size={13} aria-hidden="true" /> {isPast ? "You participated" : "You’re registered"}
-              </span>
-              <dl className="summary-list registered-details">
-                {registration.teamName && <><dt>Team Name</dt><dd>{registration.teamName}</dd></>}
-                {registration.members?.map((member) => <Fragment key={member.enrollmentNo}><dt>{member.role === "LEADER" ? "Team Leader" : "Team Member"}</dt><dd>{member.name} · {member.enrollmentNo} · {member.batch} · {member.branch}</dd></Fragment>)}
-                {!registration.teamName && <><dt>Name</dt>
-                <dd>{account.displayName}</dd>
-                <dt>Enrollment number</dt>
-                <dd>{account.profile.enrollmentNo}</dd>
-                <dt>Batch · Branch</dt>
-                <dd>
-                  {account.profile.batch} · {account.profile.branch}
-                </dd>
-                <dt>Year of Study</dt>
-                <dd>{account.profile.academic.yearOfStudyLabel ?? "—"}</dd>
-                <dt>HackerRank ID</dt>
-                <dd>{registration.hackerrankHandle}</dd>
-                <dt>Registered on</dt>
-                <dd>{formatContestDate(registration.createdAt)}</dd>
-                </>}
-              </dl>
-              {!isPast && (
-                slug === "execute-26-4" && registration.role !== "LEADER" ? (
-                  <p className="panel-help">Only the team leader can withdraw this team registration.</p>
-                ) : (
-                  <WithdrawRegistration contest={contest} onWithdraw={withdraw} />
-                )
-              )}
-            </div>
-            {slug === "execute-26-4" && (
-              <aside className="profile-panel execute-seating-panel" aria-live="polite">
-                <h2>Seating Plan</h2>
-                <dl className="summary-list">
-                  <dt>Team Name</dt><dd>{registration.seatingPlan?.teamName || registration.teamName || "—"}</dd>
-                  <dt>Hall Name</dt><dd>{registration.seatingPlan?.hallName || "—"}</dd>
-                  <dt>Lab Number</dt><dd>{registration.seatingPlan?.labNumber || "—"}</dd>
-                  <dt>System Number</dt><dd>{registration.seatingPlan?.systemNumber || "—"}</dd>
+              <div className="profile-panel">
+                {contest.mandatory && <span className="status-pill is-mandatory">MANDATORY</span>}
+                <span className="status-pill is-done">
+                  <Check size={13} aria-hidden="true" /> {isPast ? "You participated" : "You’re registered"}
+                </span>
+                <dl className="summary-list registered-details">
+                  {registration.teamName && (
+                    <>
+                      <dt>Team Name</dt>
+                      <dd>{registration.teamName}</dd>
+                    </>
+                  )}
+                  {registration.members?.map((member) => (
+                    <Fragment key={member.enrollmentNo}>
+                      <dt>{member.role === "LEADER" ? "Team Leader" : "Team Member"}</dt>
+                      <dd>
+                        {member.name} · {member.enrollmentNo} · {member.batch} · {member.branch}
+                      </dd>
+                    </Fragment>
+                  ))}
+                  {!registration.teamName && (
+                    <>
+                      <dt>Name</dt>
+                      <dd>{account.displayName}</dd>
+                      <dt>Enrollment number</dt>
+                      <dd>{account.profile.enrollmentNo}</dd>
+                      <dt>Batch · Branch</dt>
+                      <dd>
+                        {account.profile.batch} · {account.profile.branch}
+                      </dd>
+                      <dt>Year of Study</dt>
+                      <dd>{account.profile.academic.yearOfStudyLabel ?? "—"}</dd>
+                      <dt>HackerRank ID</dt>
+                      <dd>{registration.hackerrankHandle}</dd>
+                      <dt>Registered on</dt>
+                      <dd>{formatContestDate(registration.createdAt)}</dd>
+                    </>
+                  )}
                 </dl>
-                {(registration.seatingPlan?.message || (!registration.seatingPlan ? EXECUTE_SEATING_PLACEHOLDER : null)) && (
-                  <p className="panel-help">{registration.seatingPlan?.message || EXECUTE_SEATING_PLACEHOLDER}</p>
+                {!isPast && (
+                  slug === "execute-26-4" && registration.role !== "LEADER" ? (
+                    <p className="panel-help">Only the team leader can withdraw this team registration.</p>
+                  ) : (
+                    <WithdrawRegistration contest={contest} onWithdraw={withdraw} />
+                  )
                 )}
-              </aside>
-            )}
+              </div>
+
+              {slug === "execute-26-4" && (
+                <aside className="profile-panel execute-seating-panel" aria-live="polite">
+                  <h2>Seating Plan</h2>
+                  <dl className="summary-list">
+                    <dt>Team Name</dt>
+                    <dd>{registration.seatingPlan?.teamName || registration.teamName || "—"}</dd>
+                    <dt>Hall Name</dt>
+                    <dd>{registration.seatingPlan?.hallName || "—"}</dd>
+                    <dt>Lab Number</dt>
+                    <dd>{registration.seatingPlan?.labNumber || "—"}</dd>
+                    <dt>System Number</dt>
+                    <dd>{registration.seatingPlan?.systemNumber || "—"}</dd>
+                  </dl>
+                  {(registration.seatingPlan?.message || (!registration.seatingPlan ? EXECUTE_SEATING_PLACEHOLDER : null)) && (
+                    <p className="panel-help">{registration.seatingPlan?.message || EXECUTE_SEATING_PLACEHOLDER}</p>
+                  )}
+                </aside>
+              )}
             </div>
           );
         }
