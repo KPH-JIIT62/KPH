@@ -52,11 +52,11 @@ function ProfileMenu() {
         onClick={() => setOpen((value) => !value)}
         aria-haspopup="menu"
         aria-expanded={open}
-        aria-label="Profile menu"
+        aria-label={`Profile menu for ${displayName}`}
+        title={displayName}
       >
         <MemberAvatar profile={profile} />
-        <span>{displayName}</span>
-        <ChevronDown size={16} aria-hidden="true" />
+        <ChevronDown size={14} className="profile-chevron" aria-hidden="true" />
       </button>
 
       {open && (

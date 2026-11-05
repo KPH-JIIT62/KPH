@@ -17,6 +17,9 @@ const { createSessionsRouter } = require("./routes/sessions");
 const { createAdminService } = require("./services/adminService");
 const { createAdminController } = require("./controllers/adminController");
 const { createAdminRouter } = require("./routes/admin");
+const { createFeedbackService } = require("./services/feedbackService");
+const { createFeedbackController } = require("./controllers/feedbackController");
+const { createFeedbackRouter } = require("./routes/feedback");
 const { requireAdmin } = require("./middleware/requireAdmin");
 
 // `now` is only for tests: they pass a fixed clock to check the July 20 academic-year rollover.
@@ -57,6 +60,9 @@ function createApp({ env, pool, verifyToken, now }) {
 
   const sessionService = createSessionService(pool, userService, { now });
   app.use("/api/sessions", requireLogin, createSessionsRouter(createSessionsController(sessionService)));
+
+  const feedbackService = createFeedbackService(pool, { now });
+  app.use("/api/feedback", requireLogin, createFeedbackRouter(createFeedbackController(feedbackService)));
 
   app.use("/api/admin", requireLogin, requireAdmin, createAdminRouter(createAdminController(adminService)));
 
