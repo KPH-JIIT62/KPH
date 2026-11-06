@@ -50,7 +50,7 @@ export function DashboardHero({ contests, sessions }: DashboardHeroProps) {
   });
 
   return (
-    <div className="relative w-full rounded-3xl overflow-hidden border border-[var(--border)] shadow-xl min-h-[520px] lg:min-h-[580px] flex items-center p-6 sm:p-10 lg:p-12 transition-all">
+    <div className="relative  w-full rounded-3xl overflow-hidden border border-[var(--border)] shadow-xl min-h-[520px] lg:min-h-[580px] flex items-center p-6 sm:p-10 lg:p-12 transition-all">
       {/* 1. Full Hero Background Image (Natural right alignment, showcasing workspace & poster) */}
       <img
         src="/images/dashboard/hero-desk.jpg"
@@ -100,7 +100,7 @@ export function DashboardHero({ contests, sessions }: DashboardHeroProps) {
 
         {/* Slogan */}
         <h2 className="text-xl sm:text-2xl lg:text-[28px] font-extrabold tracking-tight text-[var(--text)] mt-1.5">
-          Code Today, <span className="text-[var(--accent)]">Grow Tomorrow.</span> 
+          Code Today, <span className="text-emerald-800">Grow Tomorrow.</span> 
         </h2>
 
         {/* Subtitle / Mission */}
