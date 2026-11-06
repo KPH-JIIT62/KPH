@@ -873,6 +873,32 @@ html[data-theme="dark"] .mobile-nav-link-active {
   margin: calc(-1 * var(--page-pad-top)) calc(-1 * var(--page-pad-x)) var(--page-pad-top);
 }
 
+.main-content>.dashboard-fullscreen-hero {
+  width: auto !important;
+  max-width: none !important;
+  margin: calc(-1 * var(--page-pad-top)) calc(-1 * var(--page-pad-x)) -18px !important;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+@media (max-width: 860px) {
+  .main-content>.dashboard-fullscreen-hero {
+    margin-bottom: -16px !important;
+  }
+}
+
+.main-content:has(> .dashboard-fullscreen-hero) {
+  display: flex;
+  flex-direction: column;
+  padding: 0 !important;
+}
+
+.main-content:has(> .dashboard-fullscreen-hero) > .dashboard-fullscreen-hero {
+  margin: 0 !important;
+  width: 100% !important;
+}
+
 .page-heading {
   display: flex;
   align-items: center;
