@@ -133,13 +133,13 @@ export default function FeedbackPage() {
   }
 
   return (
-    <div className="w-full max-w-[580px] mx-auto py-6 sm:py-10 px-4">
-      {/* Header section - centered, compact, readable */}
+    <div className="section-page py-6 sm:py-8 max-w-[560px] mx-auto px-4">
+      {/* Header section - centered, top badge removed */}
       <div className="relative mb-6 text-center">
         <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-[var(--text)] text-center">
           Feedback & Suggestions
         </h1>
-        <p className="mt-2 text-center text-xs sm:text-sm text-[var(--text-secondary)] mx-auto leading-relaxed max-w-md">
+        <p className="mt-2 text-center text-xs sm:text-sm text-[var(--text-secondary)] mx-auto leading-relaxed">
           We value member thoughts to make KPH workshops, coding contests, and community sessions
           better.
         </p>
@@ -179,7 +179,7 @@ export default function FeedbackPage() {
           </div>
         </div>
       ) : (
-        /* Feedback Form - Compact horizontally & center-aligned */
+        /* Feedback Form */
         <form
           onSubmit={handleSubmit}
           className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-5 sm:p-7 shadow-md space-y-6"
@@ -200,7 +200,7 @@ export default function FeedbackPage() {
             </div>
 
             {/* Pill chips row - Center aligned */}
-            <div className="flex items-center justify-center gap-1.5 sm:gap-2 flex-wrap">
+            <div className="flex items-center justify-center gap-2 flex-wrap">
               {FEEDBACK_TYPES.map((type) => {
                 const isSelected = feedbackType === type.id;
                 return (
@@ -208,12 +208,13 @@ export default function FeedbackPage() {
                     key={type.id}
                     type="button"
                     onClick={() => setFeedbackType(type.id)}
-                    className={`inline-flex items-center gap-1.5 rounded-full border px-3 sm:px-3.5 py-1.5 text-xs font-medium transition-all ${
+                    className={`inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-medium transition-all ${
                       isSelected
                         ? "border-[var(--accent)] bg-[var(--accent)]/15 text-[var(--accent)] font-semibold shadow-xs ring-1 ring-[var(--accent)]"
                         : "border-[var(--border)] bg-[var(--surface-muted)] text-[var(--text-secondary)] hover:text-[var(--text)] hover:border-[var(--border-strong)]"
                     }`}
                   >
+                    <span className="text-sm">{type.emoji}</span>
                     <span>{type.shortLabel}</span>
                   </button>
                 );
@@ -221,9 +222,9 @@ export default function FeedbackPage() {
             </div>
           </div>
 
-          {/* 2. EXPERIENCE RATING - Symmetrical 5-column grid, responsive on all phones */}
-          <div className="w-full max-w-[440px] mx-auto rounded-2xl border border-[var(--border)] bg-[var(--surface-muted)]/60 p-3.5 sm:p-4 text-center shadow-xs">
-            <div className="text-center mb-2.5">
+          {/* 2. EXPERIENCE RATING - Adjustable size, no leftover space, center aligned */}
+          <div className="mx-auto w-fit max-w-full rounded-2xl border border-[var(--border)] bg-[var(--surface-muted)]/60 px-4 py-3 sm:px-6 sm:py-3.5 text-center shadow-xs">
+            <div className="text-center mb-2">
               <label className="text-xs font-bold text-[var(--text)] block">
                 How was your recent club experience?
               </label>
@@ -241,7 +242,7 @@ export default function FeedbackPage() {
               </p>
             </div>
 
-            <div className="grid grid-cols-5 gap-1 sm:gap-2 w-full">
+            <div className="flex items-center justify-center gap-1.5 sm:gap-2.5">
               {RATINGS.map((r) => {
                 const isSelected = rating === r.value;
                 return (
@@ -249,18 +250,18 @@ export default function FeedbackPage() {
                     key={r.value}
                     type="button"
                     onClick={() => setRating(r.value)}
-                    className={`group flex flex-col items-center justify-center min-h-[58px] sm:min-h-[66px] rounded-xl border p-1 sm:p-1.5 transition-all ${
+                    className={`group flex flex-col items-center gap-0.5 rounded-xl border px-2.5 py-1.5 sm:px-3 sm:py-2 transition-all ${
                       isSelected
                         ? "border-[var(--accent)] bg-[var(--accent)]/15 scale-105 shadow-sm ring-1 ring-[var(--accent)]"
                         : "border-transparent hover:border-[var(--border)] hover:bg-[var(--surface)]"
                     }`}
                     title={r.label}
                   >
-                    <span className="text-xl sm:text-2xl transition-transform group-hover:scale-110 select-none">
+                    <span className="text-2xl transition-transform group-hover:scale-110">
                       {r.emoji}
                     </span>
                     <span
-                      className={`text-[9px] sm:text-[10px] font-medium mt-1 leading-tight text-center ${
+                      className={`text-[10px] font-medium ${
                         isSelected ? "text-[var(--accent)] font-semibold" : "text-[var(--muted)]"
                       }`}
                     >
